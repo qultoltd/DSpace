@@ -13,17 +13,25 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.io.InputStream;
 import java.sql.SQLException;
 import java.util.LinkedList;
+import java.util.List;
+import java.util.Random;
 
+import org.apache.commons.codec.CharEncoding;
 import org.apache.commons.collections4.CollectionUtils;
-import org.dspace.app.rest.builder.ProcessBuilder;
+import org.apache.commons.io.IOUtils;
 import org.dspace.app.rest.matcher.PageMatcher;
+import org.dspace.app.rest.matcher.ProcessFileTypesMatcher;
 import org.dspace.app.rest.matcher.ProcessMatcher;
 import org.dspace.app.rest.test.AbstractControllerIntegrationTest;
+import org.dspace.builder.ProcessBuilder;
+import org.dspace.content.Bitstream;
 import org.dspace.content.ProcessStatus;
 import org.dspace.scripts.DSpaceCommandLineParameter;
 import org.dspace.scripts.Process;
+import org.dspace.scripts.ProcessLogLevel;
 import org.dspace.scripts.service.ProcessService;
 import org.hamcrest.Matchers;
 import org.junit.After;
@@ -46,7 +54,7 @@ public class ProcessRestRepositoryIT extends AbstractControllerIntegrationTest {
         CollectionUtils.emptyIfNull(processService.findAll(context)).stream().forEach(process -> {
             try {
                 processService.delete(context, process);
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 throw new RuntimeException(e);
             }
         });
@@ -65,7 +73,7 @@ public class ProcessRestRepositoryIT extends AbstractControllerIntegrationTest {
                         .andExpect(jsonPath("$", Matchers.is(
                             ProcessMatcher.matchProcess(process.getName(), String.valueOf(process.getEPerson().getID()),
                                                         process.getID(), parameters, ProcessStatus.SCHEDULED)))
-                        );
+        );
     }
 
     @Test
@@ -79,7 +87,7 @@ public class ProcessRestRepositoryIT extends AbstractControllerIntegrationTest {
                         .andExpect(jsonPath("$", Matchers.is(
                             ProcessMatcher.matchProcess(process.getName(), String.valueOf(process.getEPerson().getID()),
                                                         process.getID(), new LinkedList<>(), ProcessStatus.SCHEDULED)))
-                        );
+        );
     }
 
     @Test
@@ -208,15 +216,140 @@ public class ProcessRestRepositoryIT extends AbstractControllerIntegrationTest {
                         .andExpect(status().isForbidden());
     }
 
+    @Test
+    public void getProcessFiles() throws Exception {
+        Process newProcess = ProcessBuilder.createProcess(context, eperson, "mock-script", new LinkedList<>()).build();
+
+        try (InputStream is = IOUtils.toInputStream("Test File For Process", CharEncoding.UTF_8)) {
+            processService.appendFile(context, process, is, "inputfile", "test.csv");
+        }
+        Bitstream bitstream = processService.getBitstream(context, process, "inputfile");
+
+        String token = getAuthToken(admin.getEmail(), password);
+
+        getClient(token).perform(get("/api/system/processes/" + process.getID() + "/files"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$._embedded.files[0].name", is("test.csv")))
+                        .andExpect(jsonPath("$._embedded.files[0].uuid", is(bitstream.getID().toString())))
+                        .andExpect(jsonPath("$._embedded.files[0].metadata['dspace.process.filetype']" +
+                                                "[0].value", is("inputfile")));
+
+    }
+
+    @Test
+    public void getProcessFilesByFileType() throws Exception {
+        Process newProcess = ProcessBuilder.createProcess(context, eperson, "mock-script", new LinkedList<>()).build();
+
+        try (InputStream is = IOUtils.toInputStream("Test File For Process", CharEncoding.UTF_8)) {
+            processService.appendFile(context, process, is, "inputfile", "test.csv");
+        }
+        Bitstream bitstream = processService.getBitstream(context, process, "inputfile");
+
+        String token = getAuthToken(admin.getEmail(), password);
+
+        getClient(token).perform(get("/api/system/processes/" + process.getID() + "/files/inputfile"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$._embedded.bitstreams[0].name", is("test.csv")))
+                        .andExpect(jsonPath("$._embedded.bitstreams[0].uuid", is(bitstream.getID().toString())))
+                        .andExpect(jsonPath("$._embedded.bitstreams[0].metadata['dspace.process.filetype']" +
+                                                "[0].value", is("inputfile")));
+
+    }
+
+    @Test
+    public void getProcessFilesTypes() throws Exception {
+        try (InputStream is = IOUtils.toInputStream("Test File For Process", CharEncoding.UTF_8)) {
+            processService.appendFile(context, process, is, "inputfile", "test.csv");
+        }
+
+        List<String> fileTypesToCheck = new LinkedList<>();
+        fileTypesToCheck.add("inputfile");
+
+        String token = getAuthToken(admin.getEmail(), password);
+
+        getClient(token).perform(get("/api/system/processes/" + process.getID() + "/filetypes"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$", ProcessFileTypesMatcher
+                            .matchProcessFileTypes("filetypes-" + process.getID(), fileTypesToCheck)));
+
+
+    }
+
+    @Test
+    public void getProcessFilesTypesForbidden() throws Exception {
+        try (InputStream is = IOUtils.toInputStream("Test File For Process", CharEncoding.UTF_8)) {
+            processService.appendFile(context, process, is, "inputfile", "test.csv");
+        }
+
+        List<String> fileTypesToCheck = new LinkedList<>();
+        fileTypesToCheck.add("inputfile");
+
+        String token = getAuthToken(eperson.getEmail(), password);
+
+        getClient(token).perform(get("/api/system/processes/" + process.getID() + "/filetypes"))
+                        .andExpect(status().isForbidden());
+
+
+    }
+
+    @Test
+    public void getProcessFilesTypesUnAuthorized() throws Exception {
+        try (InputStream is = IOUtils.toInputStream("Test File For Process", CharEncoding.UTF_8)) {
+            processService.appendFile(context, process, is, "inputfile", "test.csv");
+        }
+
+        List<String> fileTypesToCheck = new LinkedList<>();
+        fileTypesToCheck.add("inputfile");
+
+        getClient().perform(get("/api/system/processes/" + process.getID() + "/filetypes"))
+                   .andExpect(status().isUnauthorized());
+
+    }
+
+    @Test
+    public void getProcessFilesTypesRandomProcessId() throws Exception {
+        try (InputStream is = IOUtils.toInputStream("Test File For Process", CharEncoding.UTF_8)) {
+            processService.appendFile(context, process, is, "inputfile", "test.csv");
+        }
+
+        List<String> fileTypesToCheck = new LinkedList<>();
+        fileTypesToCheck.add("inputfile");
+
+        String token = getAuthToken(admin.getEmail(), password);
+
+        getClient(token).perform(get("/api/system/processes/" + new Random() + "/filetypes"))
+                        .andExpect(status().isNotFound());
+
+
+    }
+
+    @Test
+    public void getProcessOutput() throws Exception {
+        try (InputStream is = IOUtils.toInputStream("Test File For Process", CharEncoding.UTF_8)) {
+            processService.appendLog(process.getID(), process.getName(), "testlog", ProcessLogLevel.INFO);
+        }
+        processService.createLogBitstream(context, process);
+        List<String> fileTypesToCheck = new LinkedList<>();
+        fileTypesToCheck.add("inputfile");
+
+        String token = getAuthToken(admin.getEmail(), password);
+
+        getClient(token).perform(get("/api/system/processes/" + process.getID() + "/output"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.name",
+                                            is(process.getName() + process.getID() + ".log")))
+                        .andExpect(jsonPath("$.type", is("bitstream")))
+                        .andExpect(jsonPath("$.metadata['dc.title'][0].value",
+                                            is(process.getName() + process.getID() + ".log")))
+                        .andExpect(jsonPath("$.metadata['dspace.process.filetype'][0].value",
+                                            is("script_output")));
+
+
+    }
+
     @After
+    @Override
     public void destroy() throws Exception {
-        CollectionUtils.emptyIfNull(processService.findAll(context)).stream().forEach(process -> {
-            try {
-                processService.delete(context, process);
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
-            }
-        });
         super.destroy();
     }
 }
