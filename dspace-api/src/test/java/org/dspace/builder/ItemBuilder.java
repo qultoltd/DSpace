@@ -90,6 +90,10 @@ public class ItemBuilder extends AbstractDSpaceObjectBuilder<Item> {
         return addMetadataValue(item, "relationship", "type", null, relationshipType);
     }
 
+    public ItemBuilder withType(final String type) {
+        return addMetadataValue(item, "dc", "type", null, type);
+    }
+
     public ItemBuilder withPublicationIssueNumber(final String issueNumber) {
         return addMetadataValue(item, "publicationissue", "issueNumber", null, issueNumber);
     }
@@ -100,6 +104,11 @@ public class ItemBuilder extends AbstractDSpaceObjectBuilder<Item> {
 
     public ItemBuilder withProvenanceData(final String provenanceData) {
         return addMetadataValue(item, MetadataSchemaEnum.DC.getName(), "description", "provenance", provenanceData);
+    }
+
+    public ItemBuilder withMetadata(final String schema, final String element, final String qualifier,
+        final String value) {
+        return addMetadataValue(item, schema, element, qualifier, value);
     }
 
     public ItemBuilder makeUnDiscoverable() {
