@@ -22,4 +22,9 @@
         <property name="description" value="Curation tasks"/>
         <property name="dspaceRunnableClass" value="org.dspace.curate.Curation"/>
     </bean>
+
+    <bean id="solr-export-statistics" class="org.dspace.app.solrstatistics.SolrStatisticsExportScriptConfiguration">
+        <property name="description" value="Export solr statistics"/>
+        <property name="dspaceRunnableClass" value="org.dspace.app.solrstatistics.SolrStatisticsExport"/>
+    </bean>
 </beans>
