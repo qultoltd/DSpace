@@ -35,7 +35,6 @@ public class SolrStatisticsDspaceCsvExportServiceImpl implements SolrStatisticsD
   private static final ThreadLocal<DateFormat> SOLR_DATE_FORMAT_NO_MS;
   private static final ThreadLocal<DateFormat> EXPORT_DATE_FORMAT;
   public static final int ROWS_PER_FILE = 10_000;
-  private static final String EXPORT_CSV = "exportCSV";
 
   private static final String MULTIPLE_VALUES_SPLITTER = ",";
   private static final String EXPORT_SEP = "_export_";
@@ -132,7 +131,7 @@ public class SolrStatisticsDspaceCsvExportServiceImpl implements SolrStatisticsD
 
 //        FileUtils.copyURLToFile(url, file);
         InputStream exportCSV = new URL(url.toString()).openStream();
-        handler.writeFilestream(context, filename, exportCSV, EXPORT_CSV);
+        handler.writeFilestream(context, filename, exportCSV, "exportCSV"+monthStart);
         handler.logInfo(String.format(
           "Solr export to file is complete.  Export for Index [%s] Month [%s] Batch [%d] Num Docs [%d]",
           indexName, monthStart, i, docsThisMonth));
@@ -192,7 +191,7 @@ public class SolrStatisticsDspaceCsvExportServiceImpl implements SolrStatisticsD
       // other acceptable value: a number, specifying how many days back to export
       days = Integer.valueOf(lastValue); // TODO check value?
     }
-    return timeField + ":[NOW/DAY-" + days + "DAYS TO " + SOLR_DATE_FORMAT.get().format(new Date()) + "]";
+    return timeField + ":[NOW/DAY-" + days + "DAYS TO NOW]";
   }
 
   /**
