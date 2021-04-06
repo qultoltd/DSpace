@@ -15,10 +15,11 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
-
 import org.apache.logging.log4j.Logger;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.dspace.content.Item;
 import org.dspace.services.ConfigurationService;
@@ -99,6 +100,15 @@ public class PDFFilter extends MediaFilter {
             try {
                 pdfDoc = PDDocument.load(source);
                 pts.writeText(pdfDoc, writer);
+                int pageNumber=1;
+                for (PDPage page : pdfDoc.getPages()) {
+                    if (!page.getAnnotations().isEmpty()) {
+                        for (PDAnnotation annotation : page.getAnnotations()) {
+                            writer.write("Annotation on page "+pageNumber+": "+annotation.getContents());
+                        }
+                    }
+                    pageNumber++;
+                }
             } catch (InvalidPasswordException ex) {
                 log.error("PDF is encrypted. Cannot extract text (item: {})",
                     () -> currentItem.getHandle());
