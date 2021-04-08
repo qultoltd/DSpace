@@ -21,6 +21,7 @@ import org.dspace.app.rest.converter.ConverterService;
 import org.dspace.app.rest.exception.DSpaceBadRequestException;
 import org.dspace.app.rest.exception.UnprocessableEntityException;
 import org.dspace.app.rest.model.CollectionRest;
+import org.dspace.app.rest.model.hateoas.CollectionResource;
 import org.dspace.app.rest.utils.ContextUtil;
 import org.dspace.app.rest.utils.Utils;
 import org.dspace.authorize.AuthorizeException;
@@ -33,7 +34,12 @@ import org.dspace.content.service.ItemService;
 import org.dspace.core.Constants;
 import org.dspace.core.Context;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.rest.webmvc.ControllerUtils;
 import org.springframework.data.rest.webmvc.ResourceNotFoundException;
+import org.springframework.hateoas.RepresentationModel;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PostAuthorize;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -79,7 +85,7 @@ public class ItemOwningCollectionUpdateRestController {
     @RequestMapping(method = RequestMethod.PUT, consumes = {"text/uri-list"})
     @PreAuthorize("hasPermission(#uuid, 'ITEM','WRITE')")
     @PostAuthorize("returnObject != null")
-    public CollectionRest move(@PathVariable UUID uuid, HttpServletResponse response,
+    public ResponseEntity<RepresentationModel<?>> move(@PathVariable UUID uuid, HttpServletResponse response,
                                HttpServletRequest request)
             throws SQLException, IOException, AuthorizeException {
         Context context = ContextUtil.obtainContext(request);
@@ -96,8 +102,9 @@ public class ItemOwningCollectionUpdateRestController {
         if (targetCollection == null) {
             return null;
         }
-        return converter.toRest(targetCollection, utils.obtainProjection());
-
+        CollectionResource collectionResource =
+          converter.toResource(converter.toRest(targetCollection, utils.obtainProjection()));
+        return ControllerUtils.toResponseEntity(HttpStatus.OK, new HttpHeaders(), collectionResource);
     }
 
     /**
