@@ -104,7 +104,9 @@ public class PDFFilter extends MediaFilter {
                 for (PDPage page : pdfDoc.getPages()) {
                     if (!page.getAnnotations().isEmpty()) {
                         for (PDAnnotation annotation : page.getAnnotations()) {
-                            writer.write("Annotation on page "+pageNumber+": "+annotation.getContents());
+                            if(!annotation.getSubtype().equals("Popup") && annotation.getContents()!=null){
+                                writer.write("Annotation on page "+pageNumber+": "+annotation.getContents()+"\r\n");
+                            }
                         }
                     }
                     pageNumber++;
