@@ -116,6 +116,9 @@ public class SolrLoggerServiceImpl implements SolrLoggerService, InitializingBea
     private static final Logger log = LogManager.getLogger();
 
     private static final String MULTIPLE_VALUES_SPLITTER = "|";
+    public static final String TITLE = "title";
+    public static final String FIRSTNAME = "firstname";
+    public static final String LASTNAME = "lastname";
     protected SolrClient solr;
 
     public static final String DATE_FORMAT_8601 = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
@@ -380,12 +383,23 @@ public class SolrLoggerServiceImpl implements SolrLoggerService, InitializingBea
         if (dspaceObject != null) {
             doc1.addField("id", dspaceObject.getID().toString());
             doc1.addField("type", dspaceObject.getType());
+            dspaceObject.getMetadata().stream()
+              .filter(metadataValue -> metadataValue.getMetadataField().getElement().equals(TITLE))
+              .findAny().ifPresent(title -> doc1.addField("title", title.getValue()));
             storeParents(doc1, dspaceObject);
         }
         // Save the current time
         doc1.addField("time", DateFormatUtils.format(new Date(), DATE_FORMAT_8601));
         if (currentUser != null) {
             doc1.addField("epersonid", currentUser.getID().toString());
+            doc1.addField("email", currentUser.getEmail());
+            currentUser.getMetadata().stream()
+              .filter(metadataValue -> metadataValue.getMetadataField().getElement().equals(FIRSTNAME))
+              .findAny().ifPresent(firstname -> doc1.addField("firstname", firstname.getValue()));
+            currentUser.getMetadata().stream()
+              .filter(metadataValue -> metadataValue.getMetadataField().getElement().equals(LASTNAME))
+              .findAny().ifPresent(lastname -> doc1.addField("lastname", lastname.getValue()));
+            storeParents(doc1, dspaceObject);
         }
 
         return doc1;
@@ -466,12 +480,23 @@ public class SolrLoggerServiceImpl implements SolrLoggerService, InitializingBea
         if (dspaceObject != null) {
             doc1.addField("id", dspaceObject.getID().toString());
             doc1.addField("type", dspaceObject.getType());
+            dspaceObject.getMetadata().stream()
+              .filter(metadataValue -> metadataValue.getMetadataField().getElement().equals(TITLE))
+              .findAny().ifPresent(title -> doc1.addField(TITLE, title.getValue()));
             storeParents(doc1, dspaceObject);
         }
         // Save the current time
         doc1.addField("time", DateFormatUtils.format(new Date(), DATE_FORMAT_8601));
         if (currentUser != null) {
             doc1.addField("epersonid", currentUser.getID().toString());
+            doc1.addField("email", currentUser.getEmail());
+            currentUser.getMetadata().stream()
+              .filter(metadataValue -> metadataValue.getMetadataField().getElement().equals(FIRSTNAME))
+              .findAny().ifPresent(firstname -> doc1.addField(FIRSTNAME, firstname.getValue()));
+            currentUser.getMetadata().stream()
+              .filter(metadataValue -> metadataValue.getMetadataField().getElement().equals(LASTNAME))
+              .findAny().ifPresent(lastname -> doc1.addField(LASTNAME, lastname.getValue()));
+            storeParents(doc1, dspaceObject);
         }
 
         return doc1;
