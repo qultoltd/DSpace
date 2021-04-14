@@ -145,16 +145,18 @@ public class ItemCopyToCollectionRestController {
 
     //copy bitstreams
     for (Bundle bundle : item.getBundles()) {
-      Bundle bnd = bundleService.create(context, newItem, bundle.getName());
-      for (Bitstream bitstream : bundle.getBitstreams()) {
-        InputStream inputStream = bitstreamService.retrieve(context, bitstream);
-        Bitstream newBitstream = bitstreamService.create(context, bnd, inputStream);
-        bitstreamService.setFormat(context, newBitstream, bitstream.getFormat(context));
-        newBitstream.setName(context, bitstream.getName());
-        newBitstream.setDescription(context, bitstream.getDescription());
-        bitstreamService.update(context, newBitstream);
+      if (bundle.getName().equals("ORIGINAL") || bundle.getName().equals("LICENSE")) {
+        Bundle bnd = bundleService.create(context, newItem, bundle.getName());
+        for (Bitstream bitstream : bundle.getBitstreams()) {
+          InputStream inputStream = bitstreamService.retrieve(context, bitstream);
+          Bitstream newBitstream = bitstreamService.create(context, bnd, inputStream);
+          bitstreamService.setFormat(context, newBitstream, bitstream.getFormat(context));
+          newBitstream.setName(context, bitstream.getName());
+          newBitstream.setDescription(context, bitstream.getDescription());
+          bitstreamService.update(context, newBitstream);
+        }
+        itemService.addBundle(context, newItem, bnd);
       }
-      itemService.addBundle(context, newItem, bnd);
     }
     installItemService.installItem(context, workspaceItem);
 
