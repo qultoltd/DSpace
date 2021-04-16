@@ -83,7 +83,7 @@ public class Application extends SpringBootServletInitializer {
     protected SpringApplicationBuilder configure(SpringApplicationBuilder application) {
         // Pass this Application class, and our initializers for DSpace Kernel and Configuration
         // NOTE: Kernel must be initialized before Configuration
-        System.setProperty("dspace.dir", "C:/workspace/Dspace-7/DSpace/dspace");
+//        System.setProperty("dspace.dir", "C:/workspace/Dspace-7/DSpace/dspace");
         return application.sources(Application.class)
                           .initializers(new DSpaceKernelInitializer(), new DSpaceConfigurationInitializer());
     }
