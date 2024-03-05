@@ -20,7 +20,6 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
-import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.builders.WebSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -41,7 +40,6 @@ import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 @EnableWebSecurity
 @Configuration
 @EnableConfigurationProperties(SecurityProperties.class)
-@EnableGlobalMethodSecurity(prePostEnabled = true)
 public class WebSecurityConfiguration extends WebSecurityConfigurerAdapter {
 
     public static final String ADMIN_GRANT = "ADMIN";
@@ -73,12 +71,12 @@ public class WebSecurityConfiguration extends WebSecurityConfigurerAdapter {
     public void configure(WebSecurity webSecurity) throws Exception {
         // Define URL patterns which Spring Security will ignore entirely.
         webSecurity
-            .ignoring()
-                // These /login request types are purposefully unsecured, as they all throw errors.
-                .antMatchers(HttpMethod.GET, "/api/authn/login")
-                .antMatchers(HttpMethod.PUT, "/api/authn/login")
-                .antMatchers(HttpMethod.PATCH, "/api/authn/login")
-                .antMatchers(HttpMethod.DELETE, "/api/authn/login");
+          .ignoring()
+          // These /login request types are purposefully unsecured, as they all throw errors.
+          .antMatchers(HttpMethod.GET, "/api/authn/login")
+          .antMatchers(HttpMethod.PUT, "/api/authn/login")
+          .antMatchers(HttpMethod.PATCH, "/api/authn/login")
+          .antMatchers(HttpMethod.DELETE, "/api/authn/login");
     }
 
 
@@ -87,78 +85,78 @@ public class WebSecurityConfiguration extends WebSecurityConfigurerAdapter {
         // Configure authentication requirements for ${dspace.server.url}/api/ URL only
         // NOTE: REST API is hardcoded to respond on /api/. Other modules (OAI, SWORD, IIIF, etc) use other root paths.
         http.requestMatchers()
-            .antMatchers("/api/**", "/iiif/**", actuatorBasePath + "/**", "/signposting/**")
-            .and()
-            // Enable Spring Security authorization on these paths
-            .authorizeRequests()
-                // Allow POST by anyone on the login endpoint
-                .antMatchers(HttpMethod.POST,"/api/authn/login").permitAll()
-                // Everyone can call GET on the status endpoint (used to check your authentication status)
-                .antMatchers(HttpMethod.GET, "/api/authn/status").permitAll()
-                .antMatchers(HttpMethod.GET, actuatorBasePath + "/info").hasAnyAuthority(ADMIN_GRANT)
-            .and()
-            // Tell Spring to not create Sessions
-            .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS).and()
-            // Anonymous requests should have the "ANONYMOUS" security grant
-            .anonymous().authorities(ANONYMOUS_GRANT).and()
-            // Wire up the HttpServletRequest with the current SecurityContext values
-            .servletApi().and()
-            // Enable CORS for Spring Security (see CORS settings in Application and ApplicationConfig)
-            .cors().and()
-            // Enable CSRF protection with custom csrfTokenRepository and custom sessionAuthenticationStrategy
-            // (both are defined below as methods).
-            // While we primarily use JWT in headers, CSRF protection is needed because we also support JWT via Cookies
-            .csrf()
-                .csrfTokenRepository(this.csrfTokenRepository())
-                .sessionAuthenticationStrategy(this.sessionAuthenticationStrategy())
-            .and()
-            .exceptionHandling()
-                // Return 401 on authorization failures with a correct WWWW-Authenticate header
-                .authenticationEntryPoint(new DSpace401AuthenticationEntryPoint(restAuthenticationService))
-                // Custom handler for AccessDeniedExceptions, including CSRF exceptions
-                .accessDeniedHandler(accessDeniedHandler)
-            .and()
+          .antMatchers("/api/**", "/iiif/**", actuatorBasePath + "/**", "/signposting/**")
+          .and()
+          // Enable Spring Security authorization on these paths
+          .authorizeRequests()
+          // Allow POST by anyone on the login endpoint
+          .antMatchers(HttpMethod.POST,"/api/authn/login").permitAll()
+          // Everyone can call GET on the status endpoint (used to check your authentication status)
+          .antMatchers(HttpMethod.GET, "/api/authn/status").permitAll()
+          .antMatchers(HttpMethod.GET, actuatorBasePath + "/info").hasAnyAuthority(ADMIN_GRANT)
+          .and()
+          // Tell Spring to not create Sessions
+          .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS).and()
+          // Anonymous requests should have the "ANONYMOUS" security grant
+          .anonymous().authorities(ANONYMOUS_GRANT).and()
+          // Wire up the HttpServletRequest with the current SecurityContext values
+          .servletApi().and()
+          // Enable CORS for Spring Security (see CORS settings in Application and ApplicationConfig)
+          .cors().and()
+          // Enable CSRF protection with custom csrfTokenRepository and custom sessionAuthenticationStrategy
+          // (both are defined below as methods).
+          // While we primarily use JWT in headers, CSRF protection is needed because we also support JWT via Cookies
+          .csrf()
+          .csrfTokenRepository(this.csrfTokenRepository())
+          .sessionAuthenticationStrategy(this.sessionAuthenticationStrategy())
+          .and()
+          .exceptionHandling()
+          // Return 401 on authorization failures with a correct WWWW-Authenticate header
+          .authenticationEntryPoint(new DSpace401AuthenticationEntryPoint(restAuthenticationService))
+          // Custom handler for AccessDeniedExceptions, including CSRF exceptions
+          .accessDeniedHandler(accessDeniedHandler)
+          .and()
 
-            // Logout configuration
-            .logout()
-                // On logout, clear the "session" salt
-                .addLogoutHandler(customLogoutHandler)
-                // Configure the logout entry point & require POST
-                .logoutRequestMatcher(new AntPathRequestMatcher("/api/authn/logout", HttpMethod.POST.name()))
-                // When logout is successful, return OK (204) status
-                .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler(HttpStatus.NO_CONTENT))
-                // Everyone can call this endpoint
-                .permitAll()
-            .and()
+          // Logout configuration
+          .logout()
+          // On logout, clear the "session" salt
+          .addLogoutHandler(customLogoutHandler)
+          // Configure the logout entry point & require POST
+          .logoutRequestMatcher(new AntPathRequestMatcher("/api/authn/logout", HttpMethod.POST.name()))
+          // When logout is successful, return OK (204) status
+          .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler(HttpStatus.NO_CONTENT))
+          // Everyone can call this endpoint
+          .permitAll()
+          .and()
 
-            // Add a filter before any request to handle DSpace IP-based authorization/authentication
-            // (e.g. anonymous users may be added to special DSpace groups if they are in a given IP range)
-            .addFilterBefore(new AnonymousAdditionalAuthorizationFilter(authenticationManager(), authenticationService),
-                             StatelessAuthenticationFilter.class)
-            // Add a filter before our login endpoints to do the authentication based on the data in the HTTP request
-            .addFilterBefore(new StatelessLoginFilter("/api/authn/login", authenticationManager(),
-                                                      restAuthenticationService),
-                             LogoutFilter.class)
-            // Add a filter before our shibboleth endpoints to do the authentication based on the data in the
-            // HTTP request
-            .addFilterBefore(new ShibbolethLoginFilter("/api/authn/shibboleth", authenticationManager(),
-                                                       restAuthenticationService),
-                             LogoutFilter.class)
-            //Add a filter before our ORCID endpoints to do the authentication based on the data in the
-            // HTTP request
-            .addFilterBefore(new OrcidLoginFilter("/api/authn/orcid", authenticationManager(),
-                                                       restAuthenticationService),
-                             LogoutFilter.class)
-            //Add a filter before our OIDC endpoints to do the authentication based on the data in the
-            // HTTP request
-            .addFilterBefore(new OidcLoginFilter("/api/authn/oidc", authenticationManager(),
-                                                      restAuthenticationService),
-                             LogoutFilter.class)
-            // Add a custom Token based authentication filter based on the token previously given to the client
-            // before each URL
-            .addFilterBefore(new StatelessAuthenticationFilter(authenticationManager(), restAuthenticationService,
-                                                               ePersonRestAuthenticationProvider, requestService),
-                             StatelessLoginFilter.class);
+          // Add a filter before any request to handle DSpace IP-based authorization/authentication
+          // (e.g. anonymous users may be added to special DSpace groups if they are in a given IP range)
+          .addFilterBefore(new AnonymousAdditionalAuthorizationFilter(authenticationManager(), authenticationService),
+            StatelessAuthenticationFilter.class)
+          // Add a filter before our login endpoints to do the authentication based on the data in the HTTP request
+          .addFilterBefore(new StatelessLoginFilter("/api/authn/login", authenticationManager(),
+              restAuthenticationService),
+            LogoutFilter.class)
+          // Add a filter before our shibboleth endpoints to do the authentication based on the data in the
+          // HTTP request
+          .addFilterBefore(new ShibbolethLoginFilter("/api/authn/shibboleth", authenticationManager(),
+              restAuthenticationService),
+            LogoutFilter.class)
+          //Add a filter before our ORCID endpoints to do the authentication based on the data in the
+          // HTTP request
+          .addFilterBefore(new OrcidLoginFilter("/api/authn/orcid", authenticationManager(),
+              restAuthenticationService),
+            LogoutFilter.class)
+          //Add a filter before our OIDC endpoints to do the authentication based on the data in the
+          // HTTP request
+          .addFilterBefore(new OidcLoginFilter("/api/authn/oidc", authenticationManager(),
+              restAuthenticationService),
+            LogoutFilter.class)
+          // Add a custom Token based authentication filter based on the token previously given to the client
+          // before each URL
+          .addFilterBefore(new StatelessAuthenticationFilter(authenticationManager(), restAuthenticationService,
+              ePersonRestAuthenticationProvider, requestService),
+            StatelessLoginFilter.class);
     }
 
     @Override

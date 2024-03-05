@@ -28,7 +28,7 @@ The modified version of the HAL Browser from https://github.com/mikekelly/hal-br
 We've updated/customized the HAL Browser to integrate better with our authentication system, provide CSRF support, and use a more recent version of its dependencies.
 
 ## Packages and main classes
-*[org.dspace.app.rest.Application](src/main/java/org/dspace/app/rest/Application.java)* is the spring boot main class it initializes
+*[org.dspace.app.rest.WebApplication](src/main/java/org/dspace/app/rest/Application.java)* is the spring boot main class it initializes
 - the DSpace kernel
 - the dspaceContextListener
 - the DSpaceWebappServletFilter

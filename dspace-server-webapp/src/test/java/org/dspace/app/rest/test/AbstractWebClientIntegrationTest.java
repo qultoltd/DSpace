@@ -9,7 +9,7 @@ package org.dspace.app.rest.test;
 
 import org.apache.commons.lang3.StringUtils;
 import org.dspace.AbstractIntegrationTestWithDatabase;
-import org.dspace.app.rest.Application;
+import org.dspace.app.TestApplication;
 import org.dspace.app.rest.utils.DSpaceConfigurationInitializer;
 import org.dspace.app.rest.utils.DSpaceKernelInitializer;
 import org.junit.runner.RunWith;
@@ -46,14 +46,14 @@ import org.springframework.test.context.junit4.SpringRunner;
 // ALSO tell Spring to start a web server on a random port
 // NOTE: By default, Spring caches and reuses ApplicationContext for each integration test (to speed up tests)
 // See: https://docs.spring.io/spring/docs/current/spring-framework-reference/testing.html#integration-testing
-@SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(classes = TestApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 // Load DSpace initializers in Spring ApplicationContext (to initialize DSpace Kernel & Configuration)
 @ContextConfiguration(initializers = { DSpaceKernelInitializer.class, DSpaceConfigurationInitializer.class })
 // Load our src/test/resources/application-test.properties to override some settings in default application.properties
 @TestPropertySource(locations = "classpath:application-test.properties")
 // Enable our custom Logging listener to log when each test method starts/stops
 @TestExecutionListeners(listeners = {LoggingTestExecutionListener.class},
-                        mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
+  mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 public class AbstractWebClientIntegrationTest extends AbstractIntegrationTestWithDatabase {
     // (Random) port chosen for test web server
     @LocalServerPort
@@ -114,14 +114,13 @@ public class AbstractWebClientIntegrationTest extends AbstractIntegrationTestWit
      * @return ResponseEntity with a String body
      */
     public ResponseEntity<String> postResponseAsString(String path, String username, String password,
-                                                       HttpEntity requestEntity) {
+      HttpEntity requestEntity) {
         // If username is not empty, perform an authenticated POST. Else attempt without AuthN
         if (StringUtils.isNotBlank(username)) {
             return getClient().withBasicAuth(username, password).postForEntity(getURL(path), requestEntity,
-                                                                               String.class);
+              String.class);
         } else {
             return getClient().postForEntity(getURL(path), requestEntity, String.class);
         }
     }
 }
-

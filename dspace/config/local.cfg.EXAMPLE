@@ -74,7 +74,7 @@ dspace.name = DSpace at My University
 # DSpace ONLY supports PostgreSQL at this time.
 
 # URL for connecting to database
-db.url = jdbc:postgresql://localhost:5432/dspace
+db.url = jdbc:postgresql://localhost:5433/dspace
 
 # JDBC Driver for PostgreSQL
 db.driver = org.postgresql.Driver

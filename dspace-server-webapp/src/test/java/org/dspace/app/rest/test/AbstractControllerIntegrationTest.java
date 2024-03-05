@@ -23,7 +23,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.StringUtils;
 import org.dspace.AbstractIntegrationTestWithDatabase;
-import org.dspace.app.rest.Application;
+import org.dspace.app.TestApplication;
 import org.dspace.app.rest.model.patch.Operation;
 import org.dspace.app.rest.utils.DSpaceConfigurationInitializer;
 import org.dspace.app.rest.utils.DSpaceKernelInitializer;
@@ -68,7 +68,7 @@ import org.springframework.web.context.WebApplicationContext;
 // Specify main class to use to load Spring ApplicationContext
 // NOTE: By default, Spring caches and reuses ApplicationContext for each integration test (to speed up tests)
 // See: https://docs.spring.io/spring/docs/current/spring-framework-reference/testing.html#integration-testing
-@SpringBootTest(classes = Application.class)
+@SpringBootTest(classes = TestApplication.class)
 // Load DSpace initializers in Spring ApplicationContext (to initialize DSpace Kernel & Configuration)
 @ContextConfiguration(initializers = { DSpaceKernelInitializer.class, DSpaceConfigurationInitializer.class })
 // Tell Spring to make ApplicationContext an instance of WebApplicationContext (for web-based tests)
@@ -77,7 +77,7 @@ import org.springframework.web.context.WebApplicationContext;
 @TestPropertySource(locations = "classpath:application-test.properties")
 // Enable our custom Logging listener to log when each test method starts/stops
 @TestExecutionListeners(listeners = {LoggingTestExecutionListener.class},
-    mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
+  mergeMode = TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 public class AbstractControllerIntegrationTest extends AbstractIntegrationTestWithDatabase {
 
     protected static final String AUTHORIZATION_HEADER = "Authorization";
@@ -92,7 +92,7 @@ public class AbstractControllerIntegrationTest extends AbstractIntegrationTestWi
 
     // Our standard/expected content type
     protected MediaType contentType = new MediaType(MediaTypes.HAL_JSON.getType(),
-                                                    MediaTypes.HAL_JSON.getSubtype(), StandardCharsets.UTF_8);
+      MediaTypes.HAL_JSON.getSubtype(), StandardCharsets.UTF_8);
 
     protected MediaType textUriContentType = RestMediaTypes.TEXT_URI_LIST;
 
@@ -108,10 +108,10 @@ public class AbstractControllerIntegrationTest extends AbstractIntegrationTestWi
     void setConverters(HttpMessageConverter<?>[] converters) {
 
         this.mappingJackson2HttpMessageConverter = Arrays.asList(converters).stream().filter(
-            hmc -> hmc instanceof MappingJackson2HttpMessageConverter).findAny().get();
+          hmc -> hmc instanceof MappingJackson2HttpMessageConverter).findAny().get();
 
         Assert.assertNotNull("the JSON message converter must not be null",
-                             this.mappingJackson2HttpMessageConverter);
+          this.mappingJackson2HttpMessageConverter);
     }
 
     /**
@@ -138,55 +138,55 @@ public class AbstractControllerIntegrationTest extends AbstractIntegrationTestWi
         }
 
         DefaultMockMvcBuilder mockMvcBuilder = webAppContextSetup(webApplicationContext)
-            //Always log the response to debug
-            .alwaysDo(MockMvcResultHandlers.print())
-            //Add all filter implementations
-            .addFilters(new ErrorPageFilter())
-            .addFilters(requestFilters.toArray(new Filter[requestFilters.size()]))
-            // Enable/Integrate Spring Security with MockMVC
-            .apply(springSecurity());
+          //Always log the response to debug
+          .alwaysDo(MockMvcResultHandlers.print())
+          //Add all filter implementations
+          .addFilters(new ErrorPageFilter())
+          .addFilters(requestFilters.toArray(new Filter[requestFilters.size()]))
+          // Enable/Integrate Spring Security with MockMVC
+          .apply(springSecurity());
 
         // Make sure all MockMvc requests (in all tests) include a valid CSRF token (in header) by default.
         // If an authToken was passed in, also make sure request sends the authToken in the "Authorization" header
         if (StringUtils.isNotBlank(authToken)) {
             mockMvcBuilder.defaultRequest(
-                get("/").with(csrf().asHeader()).header(AUTHORIZATION_HEADER, AUTHORIZATION_TYPE + authToken));
+              get("/").with(csrf().asHeader()).header(AUTHORIZATION_HEADER, AUTHORIZATION_TYPE + authToken));
         } else {
             mockMvcBuilder.defaultRequest(get("/").with(csrf().asHeader()));
         }
 
         return mockMvcBuilder
-            .build();
+          .build();
     }
 
     public MockHttpServletResponse getAuthResponse(String user, String password) throws Exception {
         return getClient().perform(post("/api/authn/login")
-                                       .param("user", user)
-                                       .param("password", password))
-                          .andReturn().getResponse();
+            .param("user", user)
+            .param("password", password))
+          .andReturn().getResponse();
     }
 
     public MockHttpServletResponse getAuthResponseWithXForwardedForHeader(String user, String password,
-                                                                          String xForwardedFor) throws Exception {
+      String xForwardedFor) throws Exception {
         return getClient().perform(post("/api/authn/login")
-                                       .param("user", user)
-                                       .param("password", password)
-                                       .header("X-Forwarded-For", xForwardedFor))
-                          .andReturn().getResponse();
+            .param("user", user)
+            .param("password", password)
+            .header("X-Forwarded-For", xForwardedFor))
+          .andReturn().getResponse();
     }
 
 
     public String getAuthToken(String user, String password) throws Exception {
         return StringUtils.substringAfter(
-            getAuthResponse(user, password).getHeader(AUTHORIZATION_HEADER),
-            AUTHORIZATION_TYPE);
+          getAuthResponse(user, password).getHeader(AUTHORIZATION_HEADER),
+          AUTHORIZATION_TYPE);
     }
 
     public String getAuthTokenWithXForwardedForHeader(String user, String password, String xForwardedFor)
-        throws Exception {
+      throws Exception {
         return StringUtils.substringAfter(
-            getAuthResponseWithXForwardedForHeader(user, password, xForwardedFor).getHeader(AUTHORIZATION_HEADER),
-            AUTHORIZATION_TYPE);
+          getAuthResponseWithXForwardedForHeader(user, password, xForwardedFor).getHeader(AUTHORIZATION_HEADER),
+          AUTHORIZATION_TYPE);
     }
 
     public String getPatchContent(List<Operation> ops) {

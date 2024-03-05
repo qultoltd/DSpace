@@ -24,11 +24,13 @@ import org.springframework.stereotype.Component;
 /**
  * This class extends the {@link ExternalSourceEntryItemUriListHandler} abstract class and implements it specifically
  * for the List<Item> objects.
- * 
+ *
  * @author Mykhaylo Boychuk (mykhaylo.boychuk at 4science.it)
  */
 @Component
 public class ExternalSourceItemUriListHandler extends ExternalSourceEntryItemUriListHandler<Item> {
+
+    private Pattern pattern = Pattern.compile("\\/api\\/core\\/items\\/(.*)");
 
     @Autowired
     private ItemService itemService;
@@ -36,21 +38,22 @@ public class ExternalSourceItemUriListHandler extends ExternalSourceEntryItemUri
     @Override
     @SuppressWarnings("rawtypes")
     public boolean supports(List<String> uriList, String method,Class clazz) {
-        if (clazz != Item.class) {
+        if (clazz != Item.class || uriList.size() != 1) {
             return false;
         }
-        return true;
+
+        return pattern.matcher(uriList.get(0)).find();
     }
 
     @Override
     public Item handle(Context context, HttpServletRequest request, List<String> uriList)
-            throws SQLException, AuthorizeException {
+      throws SQLException, AuthorizeException {
         return getObjectFromUriList(context, uriList);
     }
 
     @Override
     public boolean validate(Context context, HttpServletRequest request, List<String> uriList)
-        throws AuthorizeException {
+      throws AuthorizeException {
         if (uriList.size() > 1) {
             return false;
         }
@@ -61,7 +64,6 @@ public class ExternalSourceItemUriListHandler extends ExternalSourceEntryItemUri
     private Item getObjectFromUriList(Context context, List<String> uriList) {
         Item item = null;
         String url = uriList.get(0);
-        Pattern pattern = Pattern.compile("\\/api\\/core\\/items\\/(.*)");
         Matcher matcher = pattern.matcher(url);
         if (!matcher.find()) {
             throw new DSpaceBadRequestException("The uri: " + url + " doesn't resolve to an item");
