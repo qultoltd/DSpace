@@ -17,7 +17,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dspace.app.rest.test.AbstractControllerIntegrationTest;
 import org.dspace.builder.CollectionBuilder;
 import org.dspace.builder.CommunityBuilder;
+import org.dspace.builder.EPersonBuilder;
 import org.dspace.content.Collection;
+import org.dspace.content.Community;
+import org.dspace.eperson.EPerson;
 import org.junit.Before;
 import org.junit.Test;
 import org.springframework.http.MediaType;
@@ -51,7 +54,7 @@ public class CollectionLogoControllerIT extends AbstractControllerIntegrationTes
 
     private String createLogoInternal() throws Exception {
         MvcResult mvcPostResult = getClient(adminAuthToken).perform(
-                MockMvcRequestBuilders.fileUpload(getLogoUrlTemplate(childCollection.getID().toString()))
+                MockMvcRequestBuilders.multipart(getLogoUrlTemplate(childCollection.getID().toString()))
                         .file(bitstreamFile))
                 .andExpect(status().isCreated())
                 .andReturn();
@@ -64,7 +67,7 @@ public class CollectionLogoControllerIT extends AbstractControllerIntegrationTes
     @Test
     public void createLogoNotLoggedIn() throws Exception {
         getClient().perform(
-                MockMvcRequestBuilders.fileUpload(getLogoUrlTemplate(childCollection.getID().toString()))
+                MockMvcRequestBuilders.multipart(getLogoUrlTemplate(childCollection.getID().toString()))
                         .file(bitstreamFile))
                 .andExpect(status().isUnauthorized());
     }
@@ -88,20 +91,48 @@ public class CollectionLogoControllerIT extends AbstractControllerIntegrationTes
     public void createLogoNoRights() throws Exception {
         String userToken = getAuthToken(eperson.getEmail(), password);
         getClient(userToken).perform(
-                MockMvcRequestBuilders.fileUpload(getLogoUrlTemplate(childCollection.getID().toString()))
+                MockMvcRequestBuilders.multipart(getLogoUrlTemplate(childCollection.getID().toString()))
                         .file(bitstreamFile))
                 .andExpect(status().isForbidden());
     }
 
     @Test
+    public void createLogoByCollectionAdmin() throws Exception {
+        context.turnOffAuthorisationSystem();
+
+        EPerson collectionAdmin = EPersonBuilder.createEPerson(context)
+                .withEmail("test4@mail.com")
+                .withPassword(password)
+                .withCanLogin(true)
+                .build();
+
+        Community community = CommunityBuilder.createCommunity(context)
+                .withName("New Community")
+                .build();
+
+        childCollection = CollectionBuilder.createCollection(context, community)
+                .withName("name of collection")
+                .withAdminGroup(collectionAdmin)
+                .build();
+
+        context.restoreAuthSystemState();
+
+        String userToken = getAuthToken(collectionAdmin.getEmail(), password);
+        getClient(userToken).perform(
+                        MockMvcRequestBuilders.multipart(getLogoUrlTemplate(childCollection.getID().toString()))
+                                .file(bitstreamFile))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
     public void createDuplicateLogo() throws Exception {
         getClient(adminAuthToken).perform(
-                MockMvcRequestBuilders.fileUpload(getLogoUrlTemplate(childCollection.getID().toString()))
+                MockMvcRequestBuilders.multipart(getLogoUrlTemplate(childCollection.getID().toString()))
                         .file(bitstreamFile))
                 .andExpect(status().isCreated());
 
         getClient(adminAuthToken).perform(
-                MockMvcRequestBuilders.fileUpload(getLogoUrlTemplate(childCollection.getID().toString()))
+                MockMvcRequestBuilders.multipart(getLogoUrlTemplate(childCollection.getID().toString()))
                         .file(bitstreamFile))
                 .andExpect(status().isUnprocessableEntity());
     }
@@ -109,7 +140,7 @@ public class CollectionLogoControllerIT extends AbstractControllerIntegrationTes
     @Test
     public void createLogoForNonexisting() throws Exception {
         getClient(adminAuthToken).perform(
-                MockMvcRequestBuilders.fileUpload(getLogoUrlTemplate("16a4b65b-3b3f-4ef5-8058-ef6f5a653ef9"))
+                MockMvcRequestBuilders.multipart(getLogoUrlTemplate("16a4b65b-3b3f-4ef5-8058-ef6f5a653ef9"))
                         .file(bitstreamFile))
                 .andExpect(status().isNotFound());
     }
@@ -140,6 +171,42 @@ public class CollectionLogoControllerIT extends AbstractControllerIntegrationTes
         String userToken = getAuthToken(eperson.getEmail(), password);
         getClient(userToken).perform(delete(getBitstreamUrlTemplate(postUuid)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    public void deleteLogoByCollectionAdmin() throws Exception {
+        context.turnOffAuthorisationSystem();
+
+        EPerson collectionAdmin = EPersonBuilder.createEPerson(context)
+                .withEmail("test4@mail.com")
+                .withPassword(password)
+                .withCanLogin(true)
+                .build();
+
+        Community community = CommunityBuilder.createCommunity(context)
+                .withName("New Community")
+                .build();
+
+        childCollection = CollectionBuilder.createCollection(context, community)
+                .withName("name of collection")
+                .withAdminGroup(collectionAdmin)
+                .build();
+
+        context.restoreAuthSystemState();
+
+        String userToken = getAuthToken(collectionAdmin.getEmail(), password);
+        MvcResult mvcPostResult = getClient(userToken).perform(
+                        MockMvcRequestBuilders.multipart(getLogoUrlTemplate(childCollection.getID().toString()))
+                                .file(bitstreamFile))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        String postContent = mvcPostResult.getResponse().getContentAsString();
+        Map<String, Object> mapPostResult = mapper.readValue(postContent, Map.class);
+
+        getClient(userToken)
+                .perform(delete(getBitstreamUrlTemplate(String.valueOf(mapPostResult.get("uuid")))))
+                .andExpect(status().isNoContent());
     }
 
     private String getLogoUrlTemplate(String uuid) {

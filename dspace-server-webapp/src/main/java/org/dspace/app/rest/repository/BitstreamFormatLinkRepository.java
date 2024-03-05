@@ -27,14 +27,14 @@ import org.springframework.stereotype.Component;
 /**
  * Link repository for "format" subresource of an individual bitstream.
  */
-@Component(BitstreamRest.CATEGORY + "." + BitstreamRest.NAME + "." + BitstreamRest.FORMAT)
+@Component(BitstreamRest.CATEGORY + "." + BitstreamRest.PLURAL_NAME + "." + BitstreamRest.FORMAT)
 public class BitstreamFormatLinkRepository extends AbstractDSpaceRestRepository
         implements LinkRestRepository {
 
     @Autowired
     BitstreamService bitstreamService;
 
-    @PreAuthorize("hasPermission(#bitstreamId, 'BITSTREAM', 'READ')")
+    @PreAuthorize("hasPermission(#bitstreamId, 'BITSTREAM', 'METADATA_READ')")
     public BitstreamFormatRest getFormat(@Nullable HttpServletRequest request,
                                          UUID bitstreamId,
                                          @Nullable Pageable optionalPageable,

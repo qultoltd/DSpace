@@ -48,8 +48,6 @@ import org.dspace.event.factory.EventServiceFactory;
  * significance varies by the combination of action and subject type.</li>
  * <li> - timestamp -- exact millisecond timestamp at which event was logged.</li>
  * </ul>
- *
- * @version $Revision$
  */
 public class Event implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -106,8 +104,10 @@ public class Event implements Serializable {
 
     protected static final int EPERSON = 1 << Constants.EPERSON; // 7
 
+    protected static final int LDN_MESSAGE = 1 << Constants.LDN_MESSAGE; // 8
+
     protected static final int ALL_OBJECTS_MASK = BITSTREAM | BUNDLE | ITEM
-        | COLLECTION | COMMUNITY | SITE | GROUP | EPERSON;
+        | COLLECTION | COMMUNITY | SITE | GROUP | EPERSON | LDN_MESSAGE;
 
     protected static Map<Integer, Integer> objTypeToMask = new HashMap<Integer, Integer>();
 
@@ -137,6 +137,9 @@ public class Event implements Serializable {
 
         objTypeToMask.put(Constants.EPERSON, EPERSON);
         objMaskToType.put(EPERSON, Constants.EPERSON);
+
+        objTypeToMask.put(Constants.LDN_MESSAGE, LDN_MESSAGE);
+        objMaskToType.put(LDN_MESSAGE, Constants.LDN_MESSAGE);
     }
 
     /** ---------- Event Fields ------------- * */
@@ -308,6 +311,7 @@ public class Event implements Serializable {
      * @param other the event to compare this one to
      * @return true if events are "equal", false otherwise.
      */
+    @Override
     public boolean equals(Object other) {
         if (other instanceof Event) {
             Event otherEvent = (Event) other;
@@ -315,14 +319,15 @@ public class Event implements Serializable {
                 .equals(otherEvent.detail))
                 && this.eventType == otherEvent.eventType
                 && this.subjectType == otherEvent.subjectType
-                && this.subjectID == otherEvent.subjectID
+                && this.subjectID.equals(otherEvent.subjectID)
                 && this.objectType == otherEvent.objectType
-                && this.objectID == otherEvent.objectID;
+                && this.objectID.equals(otherEvent.objectID);
         }
 
         return false;
     }
 
+    @Override
     public int hashCode() {
         return new HashCodeBuilder().append(this.detail)
                                     .append(eventType)
@@ -634,6 +639,7 @@ public class Event implements Serializable {
      * @return Detailed string representation of contents of this event, to
      * help in logging and debugging.
      */
+    @Override
     public String toString() {
         return "org.dspace.event.Event(eventType="
             + this.getEventTypeAsString()

@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.sql.SQLException;
 
+import org.dspace.app.ldn.NotifyPatternToTrigger;
+import org.dspace.app.ldn.NotifyServiceEntity;
 import org.dspace.authorize.AuthorizeException;
 import org.dspace.content.Bitstream;
 import org.dspace.content.Collection;
@@ -22,6 +24,7 @@ import org.dspace.content.WorkspaceItem;
 import org.dspace.content.service.WorkspaceItemService;
 import org.dspace.core.Context;
 import org.dspace.eperson.EPerson;
+import org.dspace.xmlworkflow.storedcomponents.XmlWorkflowItem;
 
 /**
  * Builder to construct WorkspaceItem objects
@@ -105,11 +108,19 @@ public class WorkspaceItemBuilder extends AbstractBuilder<WorkspaceItem, Workspa
     @Override
     public void cleanup() throws Exception {
         try (Context c = new Context()) {
+            c.setDispatcher("noindex");
             c.turnOffAuthorisationSystem();
             // Ensure object and any related objects are reloaded before checking to see what needs cleanup
             workspaceItem = c.reloadEntity(workspaceItem);
             if (workspaceItem != null) {
                 delete(c, workspaceItem);
+            } else {
+                item = c.reloadEntity(item);
+                // check if the wsi has been pushed to the workflow
+                XmlWorkflowItem wfi = workflowItemService.findByItem(c, item);
+                if (wfi != null) {
+                    workflowItemService.delete(c, wfi);
+                }
             }
             item = c.reloadEntity(item);
             if (item != null) {
@@ -132,6 +143,11 @@ public class WorkspaceItemBuilder extends AbstractBuilder<WorkspaceItem, Workspa
         } catch (Exception e) {
             return handleException(e);
         }
+        return this;
+    }
+
+    public WorkspaceItemBuilder withSubmitter(EPerson ePerson) {
+        workspaceItem.getItem().setSubmitter(ePerson);
         return this;
     }
 
@@ -163,12 +179,20 @@ public class WorkspaceItemBuilder extends AbstractBuilder<WorkspaceItem, Workspa
         return addMetadataValue(MetadataSchemaEnum.DC.getName(), "subject", null, subject);
     }
 
+    public WorkspaceItemBuilder withIssn(String issn) {
+        return addMetadataValue(MetadataSchemaEnum.DC.getName(), "identifier", "issn", issn);
+    }
+
+    public WorkspaceItemBuilder withEntityType(final String entityType) {
+        return addMetadataValue("dspace", "entity", "type", entityType);
+    }
+
     public WorkspaceItemBuilder withAbstract(final String subject) {
         return addMetadataValue(MetadataSchemaEnum.DC.getName(),"description", "abstract", subject);
     }
 
-    public WorkspaceItemBuilder withRelationshipType(final String relationshipType) {
-        return addMetadataValue("relationship", "type", null, relationshipType);
+    public WorkspaceItemBuilder withType(final String type) {
+        return addMetadataValue(MetadataSchemaEnum.DC.getName(),"type", null, type);
     }
 
     public WorkspaceItemBuilder grantLicense() {
@@ -197,4 +221,20 @@ public class WorkspaceItemBuilder extends AbstractBuilder<WorkspaceItem, Workspa
         }
         return this;
     }
+
+    public WorkspaceItemBuilder withCOARNotifyService(NotifyServiceEntity notifyService, String pattern) {
+        Item item = workspaceItem.getItem();
+
+        try {
+            NotifyPatternToTrigger notifyPatternToTrigger = notifyPatternToTriggerService.create(context);
+            notifyPatternToTrigger.setItem(item);
+            notifyPatternToTrigger.setNotifyService(notifyService);
+            notifyPatternToTrigger.setPattern(pattern);
+            notifyPatternToTriggerService.update(context, notifyPatternToTrigger);
+        } catch (Exception e) {
+            handleException(e);
+        }
+        return this;
+    }
+
 }

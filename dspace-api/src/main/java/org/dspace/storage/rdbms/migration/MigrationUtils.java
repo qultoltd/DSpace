@@ -7,12 +7,19 @@
  */
 package org.dspace.storage.rdbms.migration;
 
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.io.UncheckedIOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Objects;
 
 import org.apache.commons.lang3.StringUtils;
+import org.dspace.core.Constants;
+import org.springframework.util.FileCopyUtils;
 
 /**
  * This Utility class offers utility methods which may be of use to perform
@@ -71,18 +78,12 @@ public class MigrationUtils {
                 constraintName += "_" + StringUtils.lowerCase(constraintSuffix);
                 cascade = true;
                 break;
-            case "oracle":
-                // In Oracle, constraints are listed in the USER_CONS_COLUMNS table
-                constraintNameSQL = "SELECT CONSTRAINT_NAME " +
-                    "FROM USER_CONS_COLUMNS " +
+            case "h2":
+                // In H2, column constraints are listed in the "INFORMATION_SCHEMA.KEY_COLUMN_USAGE" table
+                constraintNameSQL = "SELECT DISTINCT CONSTRAINT_NAME " +
+                    "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE " +
                     "WHERE TABLE_NAME = ? AND COLUMN_NAME = ?";
                 cascade = true;
-                break;
-            case "h2":
-                // In H2, constraints are listed in the "information_schema.constraints" table
-                constraintNameSQL = "SELECT DISTINCT CONSTRAINT_NAME " +
-                    "FROM information_schema.constraints " +
-                    "WHERE table_name = ? AND column_list = ?";
                 break;
             default:
                 throw new SQLException("DBMS " + dbtype + " is unsupported in this migration.");
@@ -152,9 +153,6 @@ public class MigrationUtils {
             case "postgresql":
                 dropTableSQL = "DROP TABLE IF EXISTS " + tableName + " CASCADE";
                 break;
-            case "oracle":
-                dropTableSQL = "DROP TABLE " + tableName + " CASCADE CONSTRAINTS";
-                break;
             case "h2":
                 dropTableSQL = "DROP TABLE IF EXISTS " + tableName + " CASCADE";
                 break;
@@ -199,9 +197,6 @@ public class MigrationUtils {
             case "postgres":
             case "postgresql":
                 dropSequenceSQL = "DROP SEQUENCE IF EXISTS " + sequenceName;
-                break;
-            case "oracle":
-                dropSequenceSQL = "DROP SEQUENCE " + sequenceName;
                 break;
             case "h2":
                 dropSequenceSQL = "DROP SEQUENCE IF EXISTS " + sequenceName;
@@ -248,9 +243,6 @@ public class MigrationUtils {
             case "postgresql":
                 dropViewSQL = "DROP VIEW IF EXISTS " + viewName + " CASCADE";
                 break;
-            case "oracle":
-                dropViewSQL = "DROP VIEW " + viewName + " CASCADE CONSTRAINTS";
-                break;
             case "h2":
                 dropViewSQL = "DROP VIEW IF EXISTS " + viewName + " CASCADE";
                 break;
@@ -269,5 +261,26 @@ public class MigrationUtils {
         }
 
         return checksum;
+    }
+
+    /**
+     * Read a given Resource, converting to a String. This is used by several Java-based
+     * migrations to read a SQL migration into a string, so that it can be executed under
+     * specific scenarios.
+     * @param resourcePath relative path of resource to read
+     * @return String contents of Resource
+     */
+    public static String getResourceAsString(String resourcePath) {
+        // Read the resource, copying to a string
+        try (Reader reader =
+                 new InputStreamReader(
+                     Objects.requireNonNull(MigrationUtils.class.getClassLoader().getResourceAsStream(resourcePath)),
+                     Constants.DEFAULT_ENCODING)) {
+            return FileCopyUtils.copyToString(reader);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        } catch (NullPointerException e) {
+            throw new IllegalStateException("Resource at " + resourcePath + " was not found", e);
+        }
     }
 }

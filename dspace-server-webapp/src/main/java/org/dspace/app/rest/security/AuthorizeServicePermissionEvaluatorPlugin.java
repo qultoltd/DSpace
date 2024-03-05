@@ -11,6 +11,8 @@ import java.io.Serializable;
 import java.sql.SQLException;
 import java.util.UUID;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.dspace.app.rest.utils.ContextUtil;
 import org.dspace.authorize.service.AuthorizeService;
 import org.dspace.content.DSpaceObject;
@@ -24,21 +26,19 @@ import org.dspace.eperson.service.EPersonService;
 import org.dspace.services.RequestService;
 import org.dspace.services.model.Request;
 import org.dspace.util.UUIDUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
 /**
- * DSpaceObjectPermissionEvaluatorPlugin will check persmissions based on the DSpace {@link AuthorizeService}.
+ * DSpaceObjectPermissionEvaluatorPlugin will check permissions based on the DSpace {@link AuthorizeService}.
  * This service will validate if the authenticated user is allowed to perform an action on the given DSpace Object
  * based on the resource policies attached to that DSpace object.
  */
 @Component
 public class AuthorizeServicePermissionEvaluatorPlugin extends RestObjectPermissionEvaluatorPlugin {
 
-    private static final Logger log = LoggerFactory.getLogger(AuthorizeServicePermissionEvaluatorPlugin.class);
+    private static final Logger log = LogManager.getLogger();
 
     @Autowired
     private AuthorizeService authorizeService;
@@ -62,7 +62,7 @@ public class AuthorizeServicePermissionEvaluatorPlugin extends RestObjectPermiss
         }
 
         Request request = requestService.getCurrentRequest();
-        Context context = ContextUtil.obtainContext(request.getServletRequest());
+        Context context = ContextUtil.obtainContext(request.getHttpServletRequest());
         EPerson ePerson = null;
         try {
             if (targetId != null) {
@@ -76,7 +76,7 @@ public class AuthorizeServicePermissionEvaluatorPlugin extends RestObjectPermiss
                     return false;
                 }
 
-                ePerson = ePersonService.findByEmail(context, (String) authentication.getPrincipal());
+                ePerson = context.getCurrentUser();
 
                 if (dSpaceObjectService != null && dsoId != null) {
                     DSpaceObject dSpaceObject = dSpaceObjectService.find(context, dsoId);
@@ -86,11 +86,16 @@ public class AuthorizeServicePermissionEvaluatorPlugin extends RestObjectPermiss
                         return true;
                     }
 
-                    // If the item is still inprogress we can process here only the READ permission.
-                    // Other actions need to be evaluated against the wrapper object (workspace or workflow item)
+
                     if (dSpaceObject instanceof Item) {
-                        if (!DSpaceRestPermission.READ.equals(restPermission)
-                            && !((Item) dSpaceObject).isArchived() && !((Item) dSpaceObject).isWithdrawn()) {
+                        Item item = (Item) dSpaceObject;
+                        if (DSpaceRestPermission.STATUS.equals(restPermission) && item.isWithdrawn()) {
+                            return true;
+                        }
+                        // If the item is still inprogress we can process here only the READ permission.
+                        // Other actions need to be evaluated against the wrapper object (workspace or workflow item)
+                        if (!DSpaceRestPermission.READ.equals(restPermission) &&
+                                   !item.isArchived() && !item.isWithdrawn()) {
                             return false;
                         }
                     }
@@ -101,7 +106,7 @@ public class AuthorizeServicePermissionEvaluatorPlugin extends RestObjectPermiss
             }
 
         } catch (SQLException e) {
-            log.error(e.getMessage(), e);
+            log.error(e::getMessage, e);
         }
 
         return false;

@@ -26,7 +26,7 @@ import org.springframework.stereotype.Component;
 /**
  * Repository for the operations on the {@link VersionHistoryRest} endpoints
  */
-@Component(VersionHistoryRest.CATEGORY + "." + VersionHistoryRest.NAME)
+@Component(VersionHistoryRest.CATEGORY + "." + VersionHistoryRest.PLURAL_NAME)
 public class VersionHistoryRestRepository extends DSpaceRestRepository<VersionHistoryRest, Integer> {
 
     private static final Logger log = org.apache.logging.log4j.LogManager.getLogger(VersionHistoryRestRepository.class);
@@ -38,7 +38,7 @@ public class VersionHistoryRestRepository extends DSpaceRestRepository<VersionHi
     private ConverterService converterService;
 
     @Override
-    @PreAuthorize("hasPermission(#id, 'VERSIONHISTORY', 'READ')")
+    @PreAuthorize("@versioningSecurity.isEnableVersioning() && hasPermission(#id, 'VERSIONHISTORY', 'READ')")
     public VersionHistoryRest findOne(Context context, Integer id) {
         try {
             VersionHistory versionHistory = versionHistoryService.find(context, id);

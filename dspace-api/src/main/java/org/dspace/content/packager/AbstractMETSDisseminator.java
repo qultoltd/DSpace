@@ -14,8 +14,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
+import java.lang.reflect.InvocationTargetException;
 import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -53,6 +52,7 @@ import edu.harvard.hul.ois.mets.helper.MetsException;
 import edu.harvard.hul.ois.mets.helper.MetsValidator;
 import edu.harvard.hul.ois.mets.helper.MetsWriter;
 import edu.harvard.hul.ois.mets.helper.PreformedXML;
+import org.apache.logging.log4j.Logger;
 import org.dspace.app.util.Util;
 import org.dspace.authorize.AuthorizeException;
 import org.dspace.authorize.factory.AuthorizeServiceFactory;
@@ -73,7 +73,7 @@ import org.dspace.content.service.BitstreamService;
 import org.dspace.content.service.SiteService;
 import org.dspace.core.Constants;
 import org.dspace.core.Context;
-import org.dspace.core.LogManager;
+import org.dspace.core.LogHelper;
 import org.dspace.core.Utils;
 import org.dspace.core.factory.CoreServiceFactory;
 import org.dspace.core.service.PluginService;
@@ -81,10 +81,10 @@ import org.dspace.license.factory.LicenseServiceFactory;
 import org.dspace.license.service.CreativeCommonsService;
 import org.dspace.services.ConfigurationService;
 import org.dspace.services.factory.DSpaceServicesFactory;
-import org.jdom.Element;
-import org.jdom.Namespace;
-import org.jdom.output.Format;
-import org.jdom.output.XMLOutputter;
+import org.jdom2.Element;
+import org.jdom2.Namespace;
+import org.jdom2.output.Format;
+import org.jdom2.output.XMLOutputter;
 
 /**
  * Base class for disseminator of
@@ -116,14 +116,13 @@ import org.jdom.output.XMLOutputter;
  * @author Larry Stone
  * @author Robert Tansley
  * @author Tim Donohue
- * @version $Revision$
  */
 public abstract class AbstractMETSDisseminator
     extends AbstractPackageDisseminator {
     /**
      * log4j category
      */
-    private static org.apache.logging.log4j.Logger log =
+    private static final Logger log =
             org.apache.logging.log4j.LogManager.getLogger(AbstractMETSDisseminator.class);
 
     // JDOM xml output writer - indented format for readability.
@@ -163,7 +162,7 @@ public abstract class AbstractMETSDisseminator
      * element to e.g. a rightsMD segment.
      */
     protected static class MdStreamCache {
-        protected Map<MdRef, InputStream> extraFiles = new HashMap<MdRef, InputStream>();
+        protected Map<MdRef, InputStream> extraFiles = new HashMap<>();
 
         public void addStream(MdRef key, InputStream md) {
             extraFiles.put(key, md);
@@ -264,13 +263,15 @@ public abstract class AbstractMETSDisseminator
             } //end if/else
 
             // Assuming no errors, log this dissemination
-            log.info(LogManager.getHeader(context, "package_disseminate",
+            log.info(LogHelper.getHeader(context, "package_disseminate",
                                           "Disseminated package file=" + pkgFile.getName() +
                                               " for Object, type="
                                               + Constants.typeText[dso.getType()] + ", handle="
                                               + dso.getHandle() + ", dbID="
                                               + String.valueOf(dso.getID())));
-        } catch (MetsException e) {
+        } catch (MetsException
+                | NoSuchMethodException | InstantiationException
+                | IllegalAccessException | InvocationTargetException e) {
             String errorMsg = "Error exporting METS for DSpace Object, type="
                 + Constants.typeText[dso.getType()] + ", handle="
                 + dso.getHandle() + ", dbID="
@@ -302,11 +303,17 @@ public abstract class AbstractMETSDisseminator
      * @throws MetsException              if METS error
      * @throws SQLException               if database error
      * @throws IOException                if IO error
+     * @throws NoSuchMethodException      passed through.
+     * @throws InstantiationException     passed through.
+     * @throws IllegalAccessException     passed through.
+     * @throws InvocationTargetException  passed through.
      */
     protected void writeZipPackage(Context context, DSpaceObject dso,
                                    PackageParameters params, OutputStream pkg)
         throws PackageValidationException, CrosswalkException, MetsException,
-        AuthorizeException, SQLException, IOException {
+            AuthorizeException, SQLException, IOException, NoSuchMethodException,
+            InstantiationException, IllegalAccessException,
+            IllegalArgumentException, InvocationTargetException {
         long lmTime = 0;
         if (dso.getType() == Constants.ITEM) {
             lmTime = ((Item) dso).getLastModified().getTime();
@@ -319,45 +326,43 @@ public abstract class AbstractMETSDisseminator
         Mets manifest = makeManifest(context, dso, params, extraStreams);
 
         // copy extra (metadata, license, etc) bitstreams into zip, update manifest
-        if (extraStreams != null) {
-            for (Map.Entry<MdRef, InputStream> ment : extraStreams.getMap().entrySet()) {
-                MdRef ref = ment.getKey();
+        for (Map.Entry<MdRef, InputStream> ment : extraStreams.getMap().entrySet()) {
+            MdRef ref = ment.getKey();
 
-                // Both Deposit Licenses & CC Licenses which are referenced as "extra streams" may already be
-                // included in our Package (if their bundles are already included in the <filSec> section of manifest).
-                // So, do a special check to see if we need to link up extra License <mdRef> entries to the bitstream
-                // in the <fileSec>.
-                // (this ensures that we don't accidentally add the same License file to our package twice)
-                linkLicenseRefsToBitstreams(context, params, dso, ref);
+            // Both Deposit Licenses & CC Licenses which are referenced as "extra streams" may already be
+            // included in our Package (if their bundles are already included in the <filSec> section of manifest).
+            // So, do a special check to see if we need to link up extra License <mdRef> entries to the bitstream
+            // in the <fileSec>.
+            // (this ensures that we don't accidentally add the same License file to our package twice)
+            linkLicenseRefsToBitstreams(context, params, dso, ref);
 
-                //If this 'mdRef' is NOT already linked up to a file in the package,
-                // then its file must be missing.  So, we are going to add a new
-                // file to the Zip package.
-                if (ref.getXlinkHref() == null || ref.getXlinkHref().isEmpty()) {
-                    InputStream is = ment.getValue();
+            //If this 'mdRef' is NOT already linked up to a file in the package,
+            // then its file must be missing.  So, we are going to add a new
+            // file to the Zip package.
+            if (ref.getXlinkHref() == null || ref.getXlinkHref().isEmpty()) {
+                InputStream is = ment.getValue();
 
-                    // create a hopefully unique filename within the Zip
-                    String fname = gensym("metadata");
-                    // link up this 'mdRef' to point to that file
-                    ref.setXlinkHref(fname);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Writing EXTRA stream to Zip: " + fname);
-                    }
-                    //actually add the file to the Zip package
-                    ZipEntry ze = new ZipEntry(fname);
-                    if (lmTime != 0) {
-                        ze.setTime(lmTime);
-                    } else {
-                        // Set a default modified date so that checksum of Zip doesn't change if Zip contents are
-                        // unchanged
-                        ze.setTime(DEFAULT_MODIFIED_DATE);
-                    }
-                    zip.putNextEntry(ze);
-                    Utils.copy(is, zip);
-                    zip.closeEntry();
-
-                    is.close();
+                // create a hopefully unique filename within the Zip
+                String fname = gensym("metadata");
+                // link up this 'mdRef' to point to that file
+                ref.setXlinkHref(fname);
+                if (log.isDebugEnabled()) {
+                    log.debug("Writing EXTRA stream to Zip: " + fname);
                 }
+                //actually add the file to the Zip package
+                ZipEntry ze = new ZipEntry(fname);
+                if (lmTime != 0) {
+                    ze.setTime(lmTime);
+                } else {
+                    // Set a default modified date so that checksum of Zip doesn't change if Zip contents are
+                    // unchanged
+                    ze.setTime(DEFAULT_MODIFIED_DATE);
+                }
+                zip.putNextEntry(ze);
+                Utils.copy(is, zip);
+                zip.closeEntry();
+
+                is.close();
             }
         }
 
@@ -458,17 +463,17 @@ public abstract class AbstractMETSDisseminator
                                 Utils.copy(input, zip);
                                 input.close();
                             } else {
-                                log.warn("Adding zero-length file for Bitstream, SID="
-                                             + String.valueOf(bitstream.getSequenceID())
+                                log.warn("Adding zero-length file for Bitstream, uuid="
+                                             + String.valueOf(bitstream.getID())
                                              + ", not authorized for READ.");
                             }
                             zip.closeEntry();
                         } else if (unauth != null && unauth.equalsIgnoreCase("skip")) {
-                            log.warn("Skipping Bitstream, SID=" + String
-                                .valueOf(bitstream.getSequenceID()) + ", not authorized for READ.");
+                            log.warn("Skipping Bitstream, uuid=" + String
+                                .valueOf(bitstream.getID()) + ", not authorized for READ.");
                         } else {
                             throw new AuthorizeException(
-                                "Not authorized to read Bitstream, SID=" + String.valueOf(bitstream.getSequenceID()));
+                                "Not authorized to read Bitstream, uuid=" + String.valueOf(bitstream.getID()));
                         }
                     }
                 }
@@ -523,7 +528,7 @@ public abstract class AbstractMETSDisseminator
 
     /**
      * Create an element wrapped around a metadata reference (either mdWrap
-     * or mdRef); i.e. dmdSec, techMd, sourceMd, etc.  Checks for
+     * or mdRef); i.e.dmdSec, techMd, sourceMd, etc.  Checks for
      * XML-DOM oriented crosswalk first, then if not found looks for
      * stream crosswalk of the same name.
      *
@@ -533,21 +538,27 @@ public abstract class AbstractMETSDisseminator
      * @param typeSpec     Type of metadata going into this mdSec (e.g. MODS, DC, PREMIS, etc)
      * @param params       the PackageParameters
      * @param extraStreams list of extra files which need to be added to final dissemination package
-     * @return mdSec element or null if xwalk returns empty results.
+     * @return mdSec element or null if crosswalk returns empty results.
      * @throws SQLException               if database error
      * @throws PackageValidationException if package validation error
      * @throws CrosswalkException         if crosswalk error
      * @throws IOException                if IO error
      * @throws AuthorizeException         if authorization error
+     * @throws NoSuchMethodException      if mdSecClass cannot be instantiated.
+     * @throws InstantiationException     if mdSecClass cannot be instantiated.
+     * @throws IllegalAccessException     if mdSecClass cannot be instantiated.
+     * @throws InvocationTargetException  if mdSecClass cannot be instantiated.
      */
     protected MdSec makeMdSec(Context context, DSpaceObject dso, Class mdSecClass,
                               String typeSpec, PackageParameters params,
                               MdStreamCache extraStreams)
         throws SQLException, PackageValidationException, CrosswalkException,
-        IOException, AuthorizeException {
+            IOException, AuthorizeException, NoSuchMethodException,
+            InstantiationException, IllegalAccessException, IllegalArgumentException,
+            InvocationTargetException {
         try {
             //create our metadata element (dmdSec, techMd, sourceMd, rightsMD etc.)
-            MdSec mdSec = (MdSec) mdSecClass.newInstance();
+            MdSec mdSec = (MdSec) mdSecClass.getDeclaredConstructor().newInstance();
             mdSec.setID(gensym(mdSec.getLocalName()));
             String parts[] = typeSpec.split(":", 2);
             String xwalkName;
@@ -665,9 +676,7 @@ public abstract class AbstractMETSDisseminator
                             "StreamDisseminationCrosswalk");
                 }
             }
-        } catch (InstantiationException e) {
-            throw new PackageValidationException("Error instantiating Mdsec object: " + e.toString(), e);
-        } catch (IllegalAccessException e) {
+        } catch (InstantiationException | IllegalAccessException e) {
             throw new PackageValidationException("Error instantiating Mdsec object: " + e.toString(), e);
         }
     }
@@ -680,7 +689,9 @@ public abstract class AbstractMETSDisseminator
                                PackageParameters params,
                                MdStreamCache extraStreams)
         throws SQLException, PackageValidationException, CrosswalkException,
-        IOException, AuthorizeException {
+            IOException, AuthorizeException,
+            NoSuchMethodException, InstantiationException, IllegalAccessException,
+            IllegalArgumentException, InvocationTargetException {
         for (int i = 0; i < mdTypes.length; ++i) {
             MdSec md = makeMdSec(context, dso, mdSecClass, mdTypes[i], params, extraStreams);
             if (md != null) {
@@ -693,7 +704,9 @@ public abstract class AbstractMETSDisseminator
     protected String addAmdSec(Context context, DSpaceObject dso, PackageParameters params,
                                Mets mets, MdStreamCache extraStreams)
         throws SQLException, PackageValidationException, CrosswalkException,
-        IOException, AuthorizeException {
+            IOException, AuthorizeException, NoSuchMethodException,
+            InstantiationException, IllegalAccessException, IllegalArgumentException,
+            IllegalArgumentException, InvocationTargetException {
         String techMdTypes[] = getTechMdTypes(context, dso, params);
         String rightsMdTypes[] = getRightsMdTypes(context, dso, params);
         String sourceMdTypes[] = getSourceMdTypes(context, dso, params);
@@ -731,12 +744,11 @@ public abstract class AbstractMETSDisseminator
     }
 
     /**
-     * Write out a METS manifest.
-     * Mostly lifted from Rob Tansley's METS exporter.
+     * Write out a METS manifest.  Mostly lifted from Rob Tansley's METS exporter.
      *
      * @param context      context
      * @param dso          DSpaceObject
-     * @param params       packaging params
+     * @param params       packaging parameters
      * @param extraStreams streams
      * @return METS manifest
      * @throws MetsException              if mets error
@@ -745,20 +757,22 @@ public abstract class AbstractMETSDisseminator
      * @throws AuthorizeException         if authorization error
      * @throws SQLException               if database error
      * @throws IOException                if IO error
+     * @throws NoSuchMethodException      if DmdSec cannot be instantiated.
+     * @throws InstantiationException     if DmdSec cannot be instantiated.
+     * @throws IllegalAccessException     if DmdSec cannot be instantiated.
+     * @throws InvocationTargetException  if DmdSec cannot be instantiated.
      */
     protected Mets makeManifest(Context context, DSpaceObject dso,
                                 PackageParameters params,
                                 MdStreamCache extraStreams)
         throws MetsException, PackageValidationException, CrosswalkException, AuthorizeException, SQLException,
-        IOException {
+            IOException, NoSuchMethodException, InstantiationException,
+            IllegalAccessException, IllegalArgumentException, InvocationTargetException {
 
         // Create the METS manifest in memory
         Mets mets = new Mets();
 
         String identifier = "DB-ID-" + dso.getID();
-        if (dso.getHandle() != null) {
-            identifier = dso.getHandle().replace('/', '-');
-        }
 
         // this ID should be globally unique (format: DSpace_[objType]_[handle with slash replaced with a dash])
         mets.setID("DSpace_" + Constants.typeText[dso.getType()] + "_" + identifier);
@@ -880,12 +894,12 @@ public abstract class AbstractMETSDisseminator
                             continue;
                         } else if (!(unauth != null && unauth.equalsIgnoreCase("zero"))) {
                             throw new AuthorizeException(
-                                "Not authorized to read Bitstream, SID=" + String.valueOf(bitstream.getSequenceID()));
+                                "Not authorized to read Bitstream, uuid=" + String.valueOf(bitstream.getID()));
                         }
                     }
 
-                    String sid = String.valueOf(bitstream.getSequenceID());
-                    String fileID = bitstreamIDstart + sid;
+                    String uuid = String.valueOf(bitstream.getID());
+                    String fileID = bitstreamIDstart + uuid;
                     edu.harvard.hul.ois.mets.File file = new edu.harvard.hul.ois.mets.File();
                     file.setID(fileID);
                     file.setSEQ(bitstream.getSequenceID());
@@ -908,7 +922,7 @@ public abstract class AbstractMETSDisseminator
                      * extracted text or a thumbnail, so we use the name to work
                      * out which bitstream to be in the same group as
                      */
-                    String groupID = "GROUP_" + bitstreamIDstart + sid;
+                    String groupID = "GROUP_" + bitstreamIDstart + uuid;
                     if ((bundle.getName() != null)
                         && (bundle.getName().equals("THUMBNAIL") ||
                         bundle.getName().startsWith("TEXT"))) {
@@ -918,7 +932,7 @@ public abstract class AbstractMETSDisseminator
                                                                    bitstream);
                         if (original != null) {
                             groupID = "GROUP_" + bitstreamIDstart
-                                + original.getSequenceID();
+                                + String.valueOf(original.getID());
                         }
                     }
                     file.setGROUPID(groupID);
@@ -1387,7 +1401,7 @@ public abstract class AbstractMETSDisseminator
         // if bare manifest, use external "persistent" URI for bitstreams
         if (params != null && (params.getBooleanProperty("manifestOnly", false))) {
             // Try to build a persistent(-ish) URI for bitstream
-            // Format: {site-base-url}/bitstream/{item-handle}/{sequence-id}/{bitstream-name}
+            // Format: {site-ui-url}/bitstreams/{bitstream-uuid}
             try {
                 // get handle of parent Item of this bitstream, if there is one:
                 String handle = null;
@@ -1398,26 +1412,13 @@ public abstract class AbstractMETSDisseminator
                         handle = bi.get(0).getHandle();
                     }
                 }
-                if (handle != null) {
-                    return configurationService
-                        .getProperty("dspace.ui.url")
-                        + "/bitstream/"
-                        + handle
-                        + "/"
-                        + String.valueOf(bitstream.getSequenceID())
-                        + "/"
-                        + URLEncoder.encode(bitstream.getName(), "UTF-8");
-                } else {   //no Handle assigned, so persistent(-ish) URI for bitstream is
-                    // Format: {site-base-url}/retrieve/{bitstream-internal-id}
-                    return configurationService
-                        .getProperty("dspace.ui.url")
-                        + "/retrieve/"
-                        + String.valueOf(bitstream.getID());
-                }
+                return configurationService
+                    .getProperty("dspace.ui.url")
+                    + "/bitstreams/"
+                    + String.valueOf(bitstream.getID())
+                    + "/download";
             } catch (SQLException e) {
                 log.error("Database problem", e);
-            } catch (UnsupportedEncodingException e) {
-                log.error("Unknown character set", e);
             }
 
             // We should only get here if we failed to build a nice URL above

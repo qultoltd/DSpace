@@ -20,15 +20,21 @@ import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.dspace.authorize.AuthorizeException;
 import org.dspace.content.DSpaceObject;
 import org.dspace.content.crosswalk.CrosswalkException;
@@ -41,17 +47,14 @@ import org.dspace.core.factory.CoreServiceFactory;
 import org.dspace.handle.service.HandleService;
 import org.dspace.identifier.DOI;
 import org.dspace.services.ConfigurationService;
-import org.jdom.Document;
-import org.jdom.Element;
-import org.jdom.JDOMException;
-import org.jdom.filter.ElementFilter;
-import org.jdom.input.SAXBuilder;
-import org.jdom.output.Format;
-import org.jdom.output.XMLOutputter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.jdom2.Document;
+import org.jdom2.Element;
+import org.jdom2.JDOMException;
+import org.jdom2.filter.ElementFilter;
+import org.jdom2.input.SAXBuilder;
+import org.jdom2.output.Format;
+import org.jdom2.output.XMLOutputter;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Required;
 
 /**
  * @author Pascal-Nicolas Becker
@@ -59,7 +62,7 @@ import org.springframework.beans.factory.annotation.Required;
 public class DataCiteConnector
     implements DOIConnector {
 
-    private static final Logger log = LoggerFactory.getLogger(DataCiteConnector.class);
+    private static final Logger log = LogManager.getLogger();
 
     // Configuration property names
     static final String CFG_USER = "identifier.doi.user";
@@ -128,7 +131,7 @@ public class DataCiteConnector
      *
      * @param DATACITE_SCHEME Probably https or http.
      */
-    @Required
+    @Autowired(required = true)
     public void setDATACITE_SCHEME(String DATACITE_SCHEME) {
         this.SCHEME = DATACITE_SCHEME;
     }
@@ -139,7 +142,7 @@ public class DataCiteConnector
      *
      * @param DATACITE_HOST Hostname to connect to register DOIs (f.e. test.datacite.org).
      */
-    @Required
+    @Autowired(required = true)
     public void setDATACITE_HOST(String DATACITE_HOST) {
         this.HOST = DATACITE_HOST;
     }
@@ -150,7 +153,7 @@ public class DataCiteConnector
      *
      * @param DATACITE_DOI_PATH Path to register DOIs, f.e. /doi.
      */
-    @Required
+    @Autowired(required = true)
     public void setDATACITE_DOI_PATH(String DATACITE_DOI_PATH) {
         if (!DATACITE_DOI_PATH.startsWith("/")) {
             DATACITE_DOI_PATH = "/" + DATACITE_DOI_PATH;
@@ -168,7 +171,7 @@ public class DataCiteConnector
      *
      * @param DATACITE_METADATA_PATH Path to register metadata, f.e. /mds.
      */
-    @Required
+    @Autowired(required = true)
     public void setDATACITE_METADATA_PATH(String DATACITE_METADATA_PATH) {
         if (!DATACITE_METADATA_PATH.startsWith("/")) {
             DATACITE_METADATA_PATH = "/" + DATACITE_METADATA_PATH;
@@ -181,8 +184,7 @@ public class DataCiteConnector
     }
 
 
-    @Autowired
-    @Required
+    @Autowired(required = true)
     public void setConfigurationService(ConfigurationService configurationService) {
         this.configurationService = configurationService;
     }
@@ -194,7 +196,7 @@ public class DataCiteConnector
      * @param CROSSWALK_NAME The name of the dissemination crosswalk to use. This
      *                       crosswalk must be configured in dspace.cfg.
      */
-    @Required
+    @Autowired(required = true)
     public void setDisseminationCrosswalkName(String CROSSWALK_NAME) {
         this.CROSSWALK_NAME = CROSSWALK_NAME;
     }
@@ -271,10 +273,7 @@ public class DataCiteConnector
             default: {
                 log.warn("While checking if the DOI {} is registered, we got a "
                              + "http status code {} and the message \"{}\".",
-                         new String[] {
-                             doi, Integer.toString(resp.statusCode),
-                             resp.getContent()
-                         });
+                        doi, Integer.toString(resp.statusCode), resp.getContent());
                 throw new DOIIdentifierException("Unable to parse an answer from "
                                                      + "DataCite API. Please have a look into DSpace logs.",
                                                  DOIIdentifierException.BAD_ANSWER);
@@ -307,7 +306,7 @@ public class DataCiteConnector
             default: {
                 log.warn("While checking if the DOI {} is registered, we got a "
                              + "http status code {} and the message \"{}\".",
-                         new String[] {doi, Integer.toString(response.statusCode), response.getContent()});
+                         doi, Integer.toString(response.statusCode), response.getContent());
                 throw new DOIIdentifierException("Unable to parse an answer from "
                                                      + "DataCite API. Please have a look into DSpace logs.",
                                                  DOIIdentifierException.BAD_ANSWER);
@@ -340,7 +339,7 @@ public class DataCiteConnector
             default: {
                 log.warn("While deleting metadata of DOI {}, we got a "
                              + "http status code {} and the message \"{}\".",
-                         new String[] {doi, Integer.toString(resp.statusCode), resp.getContent()});
+                         doi, Integer.toString(resp.statusCode), resp.getContent());
                 throw new DOIIdentifierException("Unable to parse an answer from "
                                                      + "DataCite API. Please have a look into DSpace logs.",
                                                  DOIIdentifierException.BAD_ANSWER);
@@ -357,10 +356,8 @@ public class DataCiteConnector
                                                                                      .getDSpaceObjectService(dso);
 
         if (!this.xwalk.canDisseminate(dso)) {
-            log.error("Crosswalk " + this.CROSSWALK_NAME
-                          + " cannot disseminate DSO with type " + dso.getType()
-                          + " and ID " + dso.getID() + ". Giving up reserving the DOI "
-                          + doi + ".");
+            log.error("Crosswalk {} cannot disseminate DSO with type {} and ID {}. Giving up reserving the DOI {}.",
+                          this.CROSSWALK_NAME, dso.getType(), dso.getID(), doi);
             throw new DOIIdentifierException("Cannot disseminate "
                                                  + dSpaceObjectService.getTypeText(dso) + "/" + dso.getID()
                                                  + " using crosswalk " + this.CROSSWALK_NAME + ".",
@@ -391,18 +388,18 @@ public class DataCiteConnector
         try {
             root = xwalk.disseminateElement(context, dso, parameters);
         } catch (AuthorizeException ae) {
-            log.error("Caught an AuthorizeException while disseminating DSO "
-                          + "with type " + dso.getType() + " and ID " + dso.getID()
-                          + ". Giving up to reserve DOI " + doi + ".", ae);
+            log.error("Caught an AuthorizeException while disseminating DSO"
+                    + " with type {} and ID {}. Giving up to reserve DOI {}.",
+                    dso.getType(), dso.getID(), doi, ae);
             throw new DOIIdentifierException("AuthorizeException occured while "
                                                  + "converting " + dSpaceObjectService.getTypeText(dso) + "/" + dso
                 .getID()
                                                  + " using crosswalk " + this.CROSSWALK_NAME + ".", ae,
                                              DOIIdentifierException.CONVERSION_ERROR);
         } catch (CrosswalkException ce) {
-            log.error("Caught an CrosswalkException while reserving a DOI ("
-                          + doi + ") for DSO with type " + dso.getType() + " and ID "
-                          + dso.getID() + ". Won't reserve the doi.", ce);
+            log.error("Caught a CrosswalkException while reserving a DOI ({})"
+                    + " for DSO with type {} and ID {}. Won't reserve the doi.",
+                    doi, dso.getType(), dso.getID(), ce);
             throw new DOIIdentifierException("CrosswalkException occured while "
                                                  + "converting " + dSpaceObjectService.getTypeText(dso) + "/" + dso
                 .getID()
@@ -422,9 +419,8 @@ public class DataCiteConnector
         } else if (!metadataDOI.equals(doi.substring(DOI.SCHEME.length()))) {
             log.error("While reserving a DOI, the "
                           + "crosswalk to generate the metadata used another DOI than "
-                          + "the DOI we're reserving. Cannot reserve DOI " + doi
-                          + " for " + dSpaceObjectService.getTypeText(dso) + " "
-                          + dso.getID() + ".");
+                          + "the DOI we're reserving. Cannot reserve DOI {} for {} {}.",
+                    doi, dSpaceObjectService.getTypeText(dso), dso.getID());
             throw new IllegalStateException("An internal error occured while "
                                                 + "generating the metadata. Unable to reserve doi, see logs "
                                                 + "for further information.");
@@ -441,12 +437,12 @@ public class DataCiteConnector
             // 400 -> invalid XML
             case (400): {
                 log.warn("DataCite was unable to understand the XML we send.");
-                log.warn("DataCite Metadata API returned a http status code "
-                             + "400: " + resp.getContent());
+                log.warn("DataCite Metadata API returned a http status code"
+                             + " 400: {}", resp::getContent);
                 Format format = Format.getCompactFormat();
                 format.setEncoding("UTF-8");
                 XMLOutputter xout = new XMLOutputter(format);
-                log.info("We send the following XML:\n" + xout.outputString(root));
+                log.info("We send the following XML:\n{}", xout.outputString(root));
                 throw new DOIIdentifierException("Unable to reserve DOI " + doi
                                                      + ". Please inform your administrator or take a look "
                                                      + " into the log files.", DOIIdentifierException.BAD_REQUEST);
@@ -454,8 +450,8 @@ public class DataCiteConnector
             // Catch all other http status code in case we forgot one.
             default: {
                 log.warn("While reserving the DOI {}, we got a http status code "
-                             + "{} and the message \"{}\".", new String[]
-                             {doi, Integer.toString(resp.statusCode), resp.getContent()});
+                             + "{} and the message \"{}\".",
+                        doi, Integer.toString(resp.statusCode), resp.getContent());
                 throw new DOIIdentifierException("Unable to parse an answer from "
                                                      + "DataCite API. Please have a look into DSpace logs.",
                                                  DOIIdentifierException.BAD_ANSWER);
@@ -480,8 +476,8 @@ public class DataCiteConnector
             resp = this.sendDOIPostRequest(doi,
                                            handleService.resolveToURL(context, dso.getHandle()));
         } catch (SQLException e) {
-            log.error("Caught SQL-Exception while resolving handle to URL: "
-                          + e.getMessage());
+            log.error("Caught SQL-Exception while resolving handle to URL: {}",
+                    e::getMessage);
             throw new RuntimeException(e);
         }
 
@@ -493,7 +489,7 @@ public class DataCiteConnector
             // 400 -> wrong domain, wrong prefix, wrong request body
             case (400): {
                 log.warn("We send an irregular request to DataCite. While "
-                             + "registering a DOI they told us: " + resp.getContent());
+                             + "registering a DOI they told us: {}", resp::getContent);
                 throw new DOIIdentifierException("Currently we cannot register "
                                                      + "DOIs. Please inform the administrator or take a look "
                                                      + " in the DSpace log file.",
@@ -502,8 +498,8 @@ public class DataCiteConnector
             // 412 Precondition failed: DOI was not reserved before registration!
             case (412): {
                 log.error("We tried to register a DOI {} that has not been reserved "
-                              + "before! The registration agency told us: {}.", doi,
-                          resp.getContent());
+                        + "before! The registration agency told us: {}.",
+                    () -> doi, resp::getContent);
                 throw new DOIIdentifierException("There was an error in handling "
                                                      + "of DOIs. The DOI we wanted to register had not been "
                                                      + "reserved in advance. Please contact the administrator "
@@ -512,9 +508,9 @@ public class DataCiteConnector
             }
             // Catch all other http status code in case we forgot one.
             default: {
-                log.warn("While registration of DOI {}, we got a http status code "
-                             + "{} and the message \"{}\".", new String[]
-                             {doi, Integer.toString(resp.statusCode), resp.getContent()});
+                log.warn("While registering DOI {}, we got a http status code "
+                             + "{} and the message \"{}\".",
+                        doi, Integer.toString(resp.statusCode), resp.getContent());
                 throw new DOIIdentifierException("Unable to parse an answer from "
                                                      + "DataCite API. Please have a look into DSpace logs.",
                                                  DOIIdentifierException.BAD_ANSWER);
@@ -565,8 +561,8 @@ public class DataCiteConnector
             try {
                 EntityUtils.consume(reqEntity);
             } catch (IOException ioe) {
-                log.info("Caught an IOException while releasing a HTTPEntity:"
-                             + ioe.getMessage());
+                log.info("Caught an IOException while releasing a HTTPEntity:  {}",
+                        ioe::getMessage);
             }
         }
     }
@@ -669,8 +665,8 @@ public class DataCiteConnector
             try {
                 EntityUtils.consume(reqEntity);
             } catch (IOException ioe) {
-                log.info("Caught an IOException while releasing an HTTPEntity:"
-                             + ioe.getMessage());
+                log.info("Caught an IOException while releasing an HTTPEntity:  {}",
+                        ioe::getMessage);
             }
         }
     }
@@ -686,14 +682,16 @@ public class DataCiteConnector
      */
     protected DataCiteResponse sendHttpRequest(HttpUriRequest req, String doi)
         throws DOIIdentifierException {
-        DefaultHttpClient httpclient = new DefaultHttpClient();
-        httpclient.getCredentialsProvider().setCredentials(
-            new AuthScope(HOST, 443),
-            new UsernamePasswordCredentials(this.getUsername(), this.getPassword()));
+        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        credentialsProvider.setCredentials(new AuthScope(HOST, 443),
+                new UsernamePasswordCredentials(this.getUsername(), this.getPassword()));
+
+        HttpClientContext httpContext = HttpClientContext.create();
+        httpContext.setCredentialsProvider(credentialsProvider);
 
         HttpEntity entity = null;
-        try {
-            HttpResponse response = httpclient.execute(req);
+        try ( CloseableHttpClient httpclient = HttpClientBuilder.create().build(); ) {
+            HttpResponse response = httpclient.execute(req, httpContext);
 
             StatusLine status = response.getStatusLine();
             int statusCode = status.getStatusCode();
@@ -767,7 +765,7 @@ public class DataCiteConnector
                 // 500 is documented and signals an internal server error
                 case (500): {
                     log.warn("Caught an http status code 500 while managing DOI "
-                                 + "{}. Message was: " + content);
+                                 + "{}. Message was: {}", doi, content);
                     throw new DOIIdentifierException("DataCite API has an internal error. "
                                                          + "It is temporarily impossible to manage DOIs. "
                                                          + "Further information can be found in DSpace log file.",
@@ -780,7 +778,7 @@ public class DataCiteConnector
 
             return new DataCiteResponse(statusCode, content);
         } catch (IOException e) {
-            log.warn("Caught an IOException: " + e.getMessage());
+            log.warn("Caught an IOException: {}", e::getMessage);
             throw new RuntimeException(e);
         } finally {
             try {
@@ -789,7 +787,7 @@ public class DataCiteConnector
                     EntityUtils.consume(entity);
                 }
             } catch (IOException e) {
-                log.warn("Can't release HTTP-Entity: " + e.getMessage());
+                log.warn("Can't release HTTP-Entity: {}", e::getMessage);
             }
         }
     }

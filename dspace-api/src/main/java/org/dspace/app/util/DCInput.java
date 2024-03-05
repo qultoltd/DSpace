@@ -10,15 +10,16 @@ package org.dspace.app.util;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import javax.annotation.Nullable;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.dspace.content.MetadataSchemaEnum;
 import org.dspace.core.Utils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Class representing a line in an input form.
@@ -27,7 +28,7 @@ import org.slf4j.LoggerFactory;
  */
 public class DCInput {
 
-    private static final Logger log = LoggerFactory.getLogger(DCInput.class);
+    private static final Logger log = LogManager.getLogger();
 
     /**
      * the DC element name
@@ -131,9 +132,14 @@ public class DCInput {
     private boolean closedVocabulary = false;
 
     /**
-     * the regex to comply with, null if nothing
+     * the regex in ECMAScript standard format, usable also by rests.
      */
     private String regex = null;
+
+    /**
+     * the computed pattern, null if nothing
+     */
+    private Pattern pattern = null;
 
     /**
      * allowed document types
@@ -144,7 +150,8 @@ public class DCInput {
     private boolean isMetadataField = false;
     private String relationshipType = null;
     private String searchConfiguration = null;
-    private String filter;
+    private final String filter;
+    private final List<String> externalSources;
 
     /**
      * The scope of the input sets, this restricts hidden metadata fields from
@@ -176,8 +183,8 @@ public class DCInput {
         }
 
         //check if the input have a language tag
-        language = Boolean.valueOf(fieldMap.get("language"));
-        valueLanguageList = new ArrayList();
+        language = Boolean.parseBoolean(fieldMap.get("language"));
+        valueLanguageList = new ArrayList<>();
         if (language) {
             String languageNameTmp = fieldMap.get("value-pairs-name");
             if (StringUtils.isBlank(languageNameTmp)) {
@@ -190,7 +197,7 @@ public class DCInput {
         repeatable = "true".equalsIgnoreCase(repStr)
             || "yes".equalsIgnoreCase(repStr);
         String nameVariantsString = fieldMap.get("name-variants");
-        nameVariants = (StringUtils.isNotBlank(nameVariantsString)) ?
+        nameVariants = StringUtils.isNotBlank(nameVariantsString) ?
                 nameVariantsString.equalsIgnoreCase("true") : false;
         label = fieldMap.get("label");
         inputType = fieldMap.get("input-type");
@@ -202,17 +209,17 @@ public class DCInput {
         }
         hint = fieldMap.get("hint");
         warning = fieldMap.get("required");
-        required = (warning != null && warning.length() > 0);
+        required = warning != null && warning.length() > 0;
         visibility = fieldMap.get("visibility");
         readOnly = fieldMap.get("readonly");
         vocabulary = fieldMap.get("vocabulary");
-        regex = fieldMap.get("regex");
+        this.initRegex(fieldMap.get("regex"));
         String closedVocabularyStr = fieldMap.get("closedVocabulary");
         closedVocabulary = "true".equalsIgnoreCase(closedVocabularyStr)
             || "yes".equalsIgnoreCase(closedVocabularyStr);
 
         // parsing of the <type-bind> element (using the colon as split separator)
-        typeBind = new ArrayList<String>();
+        typeBind = new ArrayList<>();
         String typeBindDef = fieldMap.get("type-bind");
         if (typeBindDef != null && typeBindDef.trim().length() > 0) {
             String[] types = typeBindDef.split(",");
@@ -226,6 +233,31 @@ public class DCInput {
         relationshipType = fieldMap.get("relationship-type");
         searchConfiguration = fieldMap.get("search-configuration");
         filter = fieldMap.get("filter");
+        externalSources = new ArrayList<>();
+        String externalSourcesDef = fieldMap.get("externalsources");
+        if (StringUtils.isNotBlank(externalSourcesDef)) {
+            String[] sources = StringUtils.split(externalSourcesDef, ",");
+            for (String source: sources) {
+                externalSources.add(StringUtils.trim(source));
+            }
+        }
+
+    }
+
+    protected void initRegex(String regex) {
+        this.regex = null;
+        this.pattern = null;
+        if (regex != null) {
+            try {
+                Optional.ofNullable(RegexPatternUtils.computePattern(regex))
+                    .ifPresent(pattern -> {
+                        this.pattern = pattern;
+                        this.regex = regex;
+                    });
+            } catch (PatternSyntaxException e) {
+                log.warn("The regex field of input {} with value {} is invalid!", this.label, regex);
+            }
+        }
     }
 
     /**
@@ -238,7 +270,7 @@ public class DCInput {
      * @return whether the input should be displayed or not
      */
     public boolean isVisible(String scope) {
-        return (visibility == null || visibility.equals(scope));
+        return visibility == null || visibility.equals(scope);
     }
 
     /**
@@ -371,7 +403,7 @@ public class DCInput {
 
     /**
      * Get the style for this form field
-     * 
+     *
      * @return the style
      */
     public String getStyle() {
@@ -491,7 +523,7 @@ public class DCInput {
      * @return true when there is no type restriction or typeName is allowed
      */
     public boolean isAllowedFor(String typeName) {
-        if (typeBind.size() == 0) {
+        if (typeBind.isEmpty()) {
             return true;
         }
 
@@ -502,8 +534,12 @@ public class DCInput {
         return visibility;
     }
 
+    public Pattern getPattern() {
+        return this.pattern;
+    }
+
     public String getRegex() {
-        return regex;
+        return this.regex;
     }
 
     public String getFieldName() {
@@ -522,6 +558,10 @@ public class DCInput {
         return filter;
     }
 
+    public List<String> getExternalSources() {
+        return externalSources;
+    }
+
     public boolean isQualdropValue() {
         if ("qualdrop_value".equals(getInputType())) {
             return true;
@@ -532,34 +572,45 @@ public class DCInput {
     public boolean validate(String value) {
         if (StringUtils.isNotBlank(value)) {
             try {
-                if (StringUtils.isNotBlank(regex)) {
-                    Pattern pattern = Pattern.compile(regex);
+                if (this.pattern != null) {
                     if (!pattern.matcher(value).matches()) {
                         return false;
                     }
                 }
             } catch (PatternSyntaxException ex) {
-                log.error("Regex validation failed!", ex.getMessage());
+                log.error("Regex validation failed!  {}", ex.getMessage());
             }
 
         }
-
         return true;
     }
 
     /**
-     * Verify whether the current field contains an entity relationship
-     * This also implies a relationship type is defined for this field
-     * The field can contain both an entity relationship and a metadata field simultaneously
+     * Get the type bind list for use in determining whether
+     * to display this field in angular dynamic form building
+     * @return list of bound types
+     */
+    public List<String> getTypeBindList() {
+        return typeBind;
+    }
+
+    /**
+     * Verify whether the current field contains an entity relationship.
+     * This also implies a relationship type is defined for this field.
+     * The field can contain both an entity relationship and a metadata field
+     * simultaneously.
+     * @return true if the field contains a relationship.
      */
     public boolean isRelationshipField() {
         return isRelationshipField;
     }
 
     /**
-     * Verify whether the current field contains a metadata field
-     * This also implies a field type is defined for this field
-     * The field can contain both an entity relationship and a metadata field simultaneously
+     * Verify whether the current field contains a metadata field.
+     * This also implies a field type is defined for this field.
+     * The field can contain both an entity relationship and a metadata field
+     * simultaneously.
+     * @return true if the field contains a metadata field.
      */
     public boolean isMetadataField() {
         return isMetadataField;

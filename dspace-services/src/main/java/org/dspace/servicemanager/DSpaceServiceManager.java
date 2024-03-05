@@ -7,7 +7,10 @@
  */
 package org.dspace.servicemanager;
 
+import static org.apache.logging.log4j.Level.DEBUG;
+
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -17,23 +20,20 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.PreDestroy;
 
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.dspace.kernel.Activator;
 import org.dspace.kernel.config.SpringLoader;
 import org.dspace.kernel.mixins.ConfigChangeListener;
-import org.dspace.kernel.mixins.InitializedService;
 import org.dspace.kernel.mixins.ServiceChangeListener;
 import org.dspace.kernel.mixins.ServiceManagerReadyAware;
-import org.dspace.kernel.mixins.ShutdownService;
 import org.dspace.servicemanager.config.DSpaceConfigurationService;
 import org.dspace.servicemanager.spring.DSpaceBeanFactoryPostProcessor;
-import org.dspace.services.ConfigurationService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.BeanWrapper;
+import org.dspace.utils.CallStackUtils;
 import org.springframework.beans.BeansException;
-import org.springframework.beans.PropertyAccessorFactory;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
@@ -47,7 +47,7 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
  */
 public final class DSpaceServiceManager implements ServiceManagerSystem {
 
-    private static Logger log = LoggerFactory.getLogger(DSpaceServiceManager.class);
+    private static Logger log = LogManager.getLogger();
 
     public static final String CONFIG_PATH = "spring/spring-dspace-applicationContext.xml";
     public static final String CORE_RESOURCE_PATH = "classpath*:spring/spring-dspace-core-services.xml";
@@ -374,7 +374,18 @@ public final class DSpaceServiceManager implements ServiceManagerSystem {
                     applicationContext.getBeanFactory().destroyBean(name, beanInstance);
                 } catch (NoSuchBeanDefinitionException e) {
                     // this happens if the bean was registered manually (annoyingly)
-                    DSpaceServiceManager.shutdownService(beanInstance);
+                    for (final Method method : beanInstance.getClass().getMethods()) {
+                        if (method.isAnnotationPresent(PreDestroy.class)) {
+                            try {
+                                method.invoke(beanInstance);
+                            } catch (IllegalAccessException
+                                    | IllegalArgumentException
+                                    | InvocationTargetException ex) {
+                                log.warn("Failed to call declared @PreDestroy method of {} service",
+                                        name, ex);
+                            }
+                        }
+                    }
                 }
             } catch (BeansException e) {
                 // nothing to do here, could not find the bean
@@ -418,10 +429,10 @@ public final class DSpaceServiceManager implements ServiceManagerSystem {
                     service = (T) applicationContext.getBean(name, type);
                 } catch (BeansException e) {
                     // no luck, try the fall back option
-                    log.info(
+                    log.debug(
                         "Unable to locate bean by name or id={}."
-                                + " Will try to look up bean by type next."
-                                + " BeansException: {}", name, e.getMessage());
+                                + " Will try to look up bean by type next.", name);
+                    CallStackUtils.logCaller(log, DEBUG);
                     service = null;
                 }
             } else {
@@ -430,9 +441,9 @@ public final class DSpaceServiceManager implements ServiceManagerSystem {
                     service = (T) applicationContext.getBean(type.getName(), type);
                 } catch (BeansException e) {
                     // no luck, try the fall back option
-                    log.info("Unable to locate bean by name or id={}."
-                            + " Will try to look up bean by type next."
-                            + " BeansException: {}", type.getName(), e.getMessage());
+                    log.debug("Unable to locate bean by name or id={}."
+                            + " Will try to look up bean by type next.", type::getName);
+                    CallStackUtils.logCaller(log, DEBUG);
                     service = null;
                 }
             }
@@ -491,6 +502,21 @@ public final class DSpaceServiceManager implements ServiceManagerSystem {
         }
         Collections.sort(beanNames);
         return beanNames;
+    }
+
+    @Override
+    public <T> Map<String, T> getServicesWithNamesByType(Class<T> type) {
+        checkRunning();
+
+        if (type == null) {
+            throw new IllegalArgumentException("type cannot be null");
+        }
+
+        try {
+            return applicationContext.getBeansOfType(type, true, true);
+        } catch (BeansException e) {
+            throw new RuntimeException("Failed to get beans of type (" + type + "): " + e.getMessage(), e);
+        }
     }
 
     @Override
@@ -579,79 +605,6 @@ public final class DSpaceServiceManager implements ServiceManagerSystem {
     // STATICS
 
     /**
-     * Configures a given service (i.e. bean) based on any DSpace configuration
-     * settings which refer to it by name. .
-     * <P>
-     * NOTE: Any configurations related to a specific service MUST be prefixed
-     * with the given service's name (e.g. [serviceName].setting = value)
-     * <P>
-     * This method logs an error if it encounters configs which refer to a
-     * service by name, but is an invalid setting for that service.
-     *
-     * @param serviceName the name of the service
-     * @param service     the service object (which will be configured)
-     * @param config      the running configuration service
-     */
-    public static void configureService(String serviceName, Object service, ConfigurationService config) {
-
-        // Check if the configuration has any properties whose prefix
-        // corresponds to this service's name
-        List<String> configKeys = config.getPropertyKeys(serviceName);
-        if (configKeys != null && !configKeys.isEmpty()) {
-            BeanWrapper beanWrapper = PropertyAccessorFactory.forBeanPropertyAccess(service);
-            for (String key : configKeys) {
-                // Remove serviceName prefix from key. This is the name of the actual bean's parameter
-                // This removes the first x chars, where x is length of serviceName + 1 char
-                // Format of Key: [serviceName].[param]
-                String param = key.substring(serviceName.length() + 1);
-
-                try {
-                    // Attempt to set this configuration on the given service's bean
-                    beanWrapper.setPropertyValue(param, config.getProperty(key));
-                    log.info("Set param (" + param + ") on service bean (" + serviceName + ") to: " + config
-                        .getProperty(key));
-                } catch (RuntimeException e) {
-                    // If an error occurs, just log it
-                    log.error("Unable to set param (" + param + ") on service bean (" + serviceName + ") to: " + config
-                        .getProperty(key), e);
-                }
-            }
-        }
-    }
-
-    /**
-     * Initializes a service if it asks to be initialized or does nothing.
-     *
-     * @param service any bean
-     * @throws IllegalStateException if the service init fails
-     */
-    public static void initService(Object service) {
-        if (service instanceof InitializedService) {
-            try {
-                ((InitializedService) service).init();
-            } catch (Exception e) {
-                throw new IllegalStateException(
-                    "Failure attempting to initialize service (" + service + "): " + e.getMessage(), e);
-            }
-        }
-    }
-
-    /**
-     * Shuts down a service if it asks to be shutdown or does nothing.
-     *
-     * @param service any bean
-     */
-    public static void shutdownService(Object service) {
-        if (service instanceof ShutdownService) {
-            try {
-                ((ShutdownService) service).shutdown();
-            } catch (Exception e) {
-                log.error("Failure shutting down service: {}", service, e);
-            }
-        }
-    }
-
-    /**
      * Build the complete list of Spring configuration paths, including
      * hard-wired paths.
      *
@@ -702,5 +655,4 @@ public final class DSpaceServiceManager implements ServiceManagerSystem {
         }
         return pathList.toArray(new String[pathList.size()]);
     }
-
 }

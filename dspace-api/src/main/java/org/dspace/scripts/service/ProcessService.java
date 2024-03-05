@@ -10,15 +10,20 @@ package org.dspace.scripts.service;
 import java.io.IOException;
 import java.io.InputStream;
 import java.sql.SQLException;
+import java.util.Date;
 import java.util.List;
+import java.util.Set;
 
 import org.dspace.authorize.AuthorizeException;
 import org.dspace.content.Bitstream;
+import org.dspace.content.ProcessStatus;
 import org.dspace.core.Context;
 import org.dspace.eperson.EPerson;
+import org.dspace.eperson.Group;
 import org.dspace.scripts.DSpaceCommandLineParameter;
 import org.dspace.scripts.Process;
 import org.dspace.scripts.ProcessLogLevel;
+import org.dspace.scripts.ProcessQueryParameterContainer;
 
 /**
  * An interface for the ProcessService with methods regarding the Process workload
@@ -31,11 +36,14 @@ public interface ProcessService {
      * @param ePerson       The ePerson for which this process will be created on
      * @param scriptName    The script name to be used for the process
      * @param parameters    The parameters to be used for the process
+     * @param specialGroups Allows to set special groups, associated with application context when process is created,
+     *                      other than the ones derived from the eperson membership.
      * @return The created process
      * @throws SQLException If something goes wrong
      */
     public Process create(Context context, EPerson ePerson, String scriptName,
-                          List<DSpaceCommandLineParameter> parameters) throws SQLException;
+                          List<DSpaceCommandLineParameter> parameters,
+                          final Set<Group> specialGroups) throws SQLException;
 
     /**
      * This method will retrieve a Process object from the Database with the given ID
@@ -191,6 +199,30 @@ public interface ProcessService {
     public List<String> getFileTypesForProcessBitstreams(Context context, Process process);
 
     /**
+     * Returns a list of all Processes in the database which match the given field requirements. If the
+     * requirements are not null, they will be combined with an AND operation.
+     * @param context          The relevant DSpace context
+     * @param processQueryParameterContainer       The {@link ProcessQueryParameterContainer} containing all the values
+     *                                             that the returned {@link Process} objects must adhere to
+     * @param limit            The limit for the amount of Processes returned
+     * @param offset           The offset for the Processes to be returned
+     * @return The list of all Processes which match the metadata requirements
+     * @throws SQLException If something goes wrong
+     */
+    List<Process> search(Context context, ProcessQueryParameterContainer processQueryParameterContainer, int limit,
+                         int offset) throws SQLException;
+
+    /**
+     * Count all the processes which match the requirements. The requirements are evaluated like the search
+     * method.
+     * @param context       The relevant DSpace context
+     * @param processQueryParameterContainer       The {@link ProcessQueryParameterContainer} containing all the values
+     *                                             that the returned {@link Process} objects must adhere to
+     * @return The number of results matching the query
+     * @throws SQLException If something goes wrong
+     */
+    int countSearch(Context context, ProcessQueryParameterContainer processQueryParameterContainer) throws SQLException;
+    /**
      * This method will append the given output to the {@link Process} its logs
      * @param processId     The ID of the {@link Process} to append the log for
      * @param scriptName    The name of the Script that Process runs
@@ -210,4 +242,39 @@ public interface ProcessService {
      */
     void createLogBitstream(Context context, Process process)
              throws IOException, SQLException, AuthorizeException;
+
+    /**
+     * Find all the processes with one of the given status and with a creation time
+     * older than the specified date.
+     *
+     * @param  context            The relevant DSpace context
+     * @param  statuses           the statuses of the processes to search for
+     * @param  date               the creation date to search for
+     * @return                    The list of all Processes which match requirements
+     * @throws AuthorizeException If something goes wrong
+     */
+    List<Process> findByStatusAndCreationTimeOlderThan(Context context, List<ProcessStatus> statuses, Date date)
+        throws SQLException;
+
+    /**
+     * Returns a list of all Process objects in the database by the given user.
+     *
+     * @param context The relevant DSpace context
+     * @param user    The user to search for
+     * @param limit   The limit for the amount of Processes returned
+     * @param offset  The offset for the Processes to be returned
+     * @return The list of all Process objects in the Database
+     * @throws SQLException If something goes wrong
+     */
+    List<Process> findByUser(Context context, EPerson user, int limit, int offset) throws SQLException;
+
+    /**
+     * Count all the processes which is related to the given user.
+     *
+     * @param context The relevant DSpace context
+     * @param user    The user to search for
+     * @return The number of results matching the query
+     * @throws SQLException If something goes wrong
+     */
+    int countByUser(Context context, EPerson user) throws SQLException;
 }

@@ -19,6 +19,7 @@ import java.util.UUID;
 import org.dspace.app.rest.matcher.VocabularyMatcher;
 import org.dspace.app.rest.repository.SubmissionFormRestRepository;
 import org.dspace.app.rest.test.AbstractControllerIntegrationTest;
+import org.dspace.authority.AuthorityValueServiceImpl;
 import org.dspace.authority.PersonAuthorityValue;
 import org.dspace.authority.factory.AuthorityServiceFactory;
 import org.dspace.builder.CollectionBuilder;
@@ -56,7 +57,11 @@ public class VocabularyRestRepositoryIT extends AbstractControllerIntegrationTes
     public void setup() throws Exception {
         super.setUp();
         configurationService.setProperty("plugin.named.org.dspace.content.authority.ChoiceAuthority",
-                "org.dspace.content.authority.SolrAuthority = SolrAuthorAuthority");
+                new String[] {
+                        "org.dspace.content.authority.SolrAuthority = SolrAuthorAuthority",
+                        "org.dspace.content.authority.SHERPARoMEOPublisher = SRPublisher",
+                        "org.dspace.content.authority.SHERPARoMEOJournalTitle = SRJournalTitle"
+                });
 
         configurationService.setProperty("solr.authority.server",
                 "${solr.server}/authority");
@@ -66,14 +71,32 @@ public class VocabularyRestRepositoryIT extends AbstractControllerIntegrationTes
                 "authorLookup");
         configurationService.setProperty("authority.controlled.dc.contributor.author",
                 "true");
-
         configurationService.setProperty("authority.author.indexer.field.1",
                 "dc.contributor.author");
+
+        configurationService.setProperty("choices.plugin.dc.publisher",
+                "SRPublisher");
+        configurationService.setProperty("choices.presentation.dc.publisher",
+                "lookup");
+        configurationService.setProperty("authority.controlled.dc.publisher",
+                "true");
+
+        configurationService.setProperty("choices.plugin.dc.relation.ispartof",
+                "SRJournalTitle");
+        configurationService.setProperty("choices.presentation.dc.relation.ispartof",
+                "lookup");
+        configurationService.setProperty("authority.controlled.dc.relation.ispartof",
+                "true");
 
         // These clears have to happen so that the config is actually reloaded in those classes. This is needed for
         // the properties that we're altering above and this is only used within the tests
         DCInputAuthority.reset();
         pluginService.clearNamedPluginClasses();
+
+        // The following line is needed to call init() method in the ChoiceAuthorityServiceImpl class, without it
+        // the `submissionConfigService` will be null what will cause a NPE in the clearCache() method
+        // https://github.com/DSpace/DSpace/issues/9292
+        cas.getChoiceAuthoritiesNames();
         cas.clearCache();
 
         context.turnOffAuthorisationSystem();
@@ -122,17 +145,18 @@ public class VocabularyRestRepositoryIT extends AbstractControllerIntegrationTes
                      VocabularyMatcher.matchProperties("srsc", "srsc", false, true),
                      VocabularyMatcher.matchProperties("common_types", "common_types", true, false),
                      VocabularyMatcher.matchProperties("common_iso_languages", "common_iso_languages", true , false),
-                     VocabularyMatcher.matchProperties("SolrAuthorAuthority", "SolrAuthorAuthority", false , false)
+                     VocabularyMatcher.matchProperties("SolrAuthorAuthority", "SolrAuthorAuthority", false , false),
+                     VocabularyMatcher.matchProperties("SRPublisher", "SRPublisher", false , false),
+                     VocabularyMatcher.matchProperties("SRJournalTitle", "SRJournalTitle", false , false)
                  )))
         .andExpect(jsonPath("$._links.self.href",
             Matchers.containsString("api/submission/vocabularies")))
-        .andExpect(jsonPath("$.page.totalElements", is(4)));
+        .andExpect(jsonPath("$.page.totalElements", is(6)));
     }
 
     @Test
     public void findOneSRSC_Test() throws Exception {
-        String token = getAuthToken(admin.getEmail(), password);
-        getClient(token).perform(get("/api/submission/vocabularies/srsc"))
+        getClient().perform(get("/api/submission/vocabularies/srsc"))
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$", is(
                             VocabularyMatcher.matchProperties("srsc", "srsc", false, true)
@@ -141,8 +165,7 @@ public class VocabularyRestRepositoryIT extends AbstractControllerIntegrationTes
 
     @Test
     public void findOneCommonTypesTest() throws Exception {
-        String token = getAuthToken(admin.getEmail(), password);
-        getClient(token).perform(get("/api/submission/vocabularies/common_types"))
+        getClient().perform(get("/api/submission/vocabularies/common_types"))
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$", is(
                             VocabularyMatcher.matchProperties("common_types", "common_types", true, false)
@@ -159,9 +182,9 @@ public class VocabularyRestRepositoryIT extends AbstractControllerIntegrationTes
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$._embedded.entries", Matchers.containsInAnyOrder(
                         VocabularyMatcher.matchVocabularyEntry("Research Subject Categories",
-                          "Research Subject Categories", "vocabularyEntry"),
+                          "", "vocabularyEntry"),
                         VocabularyMatcher.matchVocabularyEntry("Family research",
-                          "Research Subject Categories::SOCIAL SCIENCES::Social sciences::Social work::Family research",
+                          "SOCIAL SCIENCES::Social sciences::Social work::Family research",
                           "vocabularyEntry"))))
                 .andExpect(jsonPath("$.page.totalElements", Matchers.is(26)))
                 .andExpect(jsonPath("$.page.totalPages", Matchers.is(13)))
@@ -292,12 +315,26 @@ public class VocabularyRestRepositoryIT extends AbstractControllerIntegrationTes
         getClient(token).perform(
                 get("/api/submission/vocabularies/SolrAuthorAuthority/entries")
                         .param("filter", "Shirasaka")
-                        .param("size", "1000"))
+                        .param("size", "100"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$._embedded.entries", Matchers.contains(
                     VocabularyMatcher.matchVocabularyEntry("Shirasaka, Seiko", "Shirasaka, Seiko", "vocabularyEntry")
                     )))
                 .andExpect(jsonPath("$._embedded.entries[0].authority").isNotEmpty())
+                .andExpect(jsonPath("$.page.totalElements", Matchers.is(1)));
+
+        // test also an entry provided by ORCID
+        getClient(token).perform(
+                get("/api/submission/vocabularies/SolrAuthorAuthority/entries")
+                        .param("filter", "Bollini")
+                        .param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$._embedded.entries", Matchers.contains(
+                    VocabularyMatcher.matchVocabularyEntry("Bollini, Andrea", "Bollini, Andrea", "vocabularyEntry")
+                    )))
+                .andExpect(jsonPath("$._embedded.entries[0].authority",
+                            Matchers.is(AuthorityValueServiceImpl.GENERATE + "orcid"
+                                    + AuthorityValueServiceImpl.SPLIT + "0000-0002-9029-1854")))
                 .andExpect(jsonPath("$.page.totalElements", Matchers.is(1)));
     }
 
@@ -307,9 +344,42 @@ public class VocabularyRestRepositoryIT extends AbstractControllerIntegrationTes
         getClient(token).perform(
                 get("/api/submission/vocabularies/SolrAuthorAuthority/entries")
                         .param("filter", "Smith")
-                        .param("size", "1000"))
+                        .param("size", "100"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.page.totalElements", Matchers.is(0)));
+    }
+
+    @Test
+    public void sherpaJournalTest() throws Exception {
+        String token = getAuthToken(admin.getEmail(), password);
+        getClient(token).perform(
+                get("/api/submission/vocabularies/SRJournalTitle/entries")
+                        .param("filter", "Lancet")
+                        .param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$._embedded.entries", Matchers.contains(
+                    VocabularyMatcher.matchVocabularyEntry("The Lancet", "The Lancet", "vocabularyEntry")
+                    )))
+                .andExpect(jsonPath("$._embedded.entries[0].authority",
+                        Matchers.is("0140-6736")))
+                .andExpect(jsonPath("$.page.totalElements", Matchers.is(1)));
+    }
+
+    @Test
+    public void sherpaPublisherTest() throws Exception {
+        String token = getAuthToken(admin.getEmail(), password);
+        getClient(token).perform(
+                get("/api/submission/vocabularies/SRPublisher/entries")
+                        .param("filter", "PLOS")
+                        .param("size", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$._embedded.entries", Matchers.contains(
+                    VocabularyMatcher.matchVocabularyEntry("Public Library of Science", "Public Library of Science",
+                            "vocabularyEntry")
+                    )))
+                .andExpect(jsonPath("$._embedded.entries[0].authority",
+                        Matchers.is("112")))
+                .andExpect(jsonPath("$.page.totalElements", Matchers.is(1)));
     }
 
     @Test
@@ -327,6 +397,20 @@ public class VocabularyRestRepositoryIT extends AbstractControllerIntegrationTes
                         .andExpect(jsonPath("$", is(
                             VocabularyMatcher.matchProperties("common_types", "common_types", true, false)
                         )));
+    }
+
+    @Test
+    public void findByMetadataAndCollectionWithMetadataWithoutVocabularyTest() throws Exception {
+        context.turnOffAuthorisationSystem();
+        Collection collection = CollectionBuilder.createCollection(context, parentCommunity)
+            .withName("Test collection")
+            .build();
+        context.restoreAuthSystemState();
+        String token = getAuthToken(admin.getEmail(), password);
+        getClient(token).perform(get("/api/submission/vocabularies/search/byMetadataAndCollection")
+                .param("metadata", "dc.title")
+                .param("collection", collection.getID().toString()))
+                .andExpect(status().isNoContent());
     }
 
     @Test

@@ -15,12 +15,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 
 import org.apache.commons.lang3.StringUtils;
-import org.dspace.kernel.mixins.InitializedService;
-import org.dspace.kernel.mixins.ShutdownService;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.dspace.services.ConfigurationService;
 import org.dspace.services.RequestService;
 import org.dspace.services.model.Request;
@@ -29,11 +31,7 @@ import org.dspace.services.model.RequestInterceptor.RequestInterruptionException
 import org.dspace.services.sessions.model.HttpRequestImpl;
 import org.dspace.services.sessions.model.InternalRequestImpl;
 import org.dspace.utils.servicemanager.OrderedServiceComparator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Required;
-
 
 /**
  * Implementation of the session service.
@@ -45,14 +43,13 @@ import org.springframework.beans.factory.annotation.Required;
  * @author Aaron Zeckoski (azeckoski @ gmail.com)
  * @author Tom Desair (tom dot desair at atmire dot com)
  */
-public final class StatelessRequestServiceImpl implements RequestService, InitializedService, ShutdownService {
+public final class StatelessRequestServiceImpl implements RequestService {
 
-    private static Logger log = LoggerFactory.getLogger(StatelessRequestServiceImpl.class);
+    private static final Logger log = LogManager.getLogger();
 
     private ConfigurationService configurationService;
 
-    @Autowired
-    @Required
+    @Autowired(required = true)
     public void setConfigurationService(ConfigurationService configurationService) {
         this.configurationService = configurationService;
     }
@@ -60,18 +57,14 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
     /**
      * map for holding onto the request interceptors which is classloader safe.
      */
-    private Map<String, RequestInterceptor> interceptorsMap = new HashMap<String, RequestInterceptor>();
+    private final Map<String, RequestInterceptor> interceptorsMap = new HashMap<>();
 
-    /* (non-Javadoc)
-     * @see org.dspace.kernel.mixins.InitializedService#init()
-     */
+    @PostConstruct
     public void init() {
         log.info("init");
     }
 
-    /* (non-Javadoc)
-     * @see org.dspace.kernel.mixins.ShutdownService#shutdown()
-     */
+    @PreDestroy
     public void shutdown() {
         log.info("shutdown");
         clear();
@@ -90,6 +83,7 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
     /* (non-Javadoc)
      * @see org.dspace.services.RequestService#startRequest()
      */
+    @Override
     public String startRequest() {
         return startRequest(new InternalRequestImpl());
     }
@@ -97,6 +91,7 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
     /* (non-Javadoc)
      * @see org.dspace.services.RequestService#startRequest()
      */
+    @Override
     public String startRequest(ServletRequest request, ServletResponse response) {
         return startRequest(new HttpRequestImpl(request, response));
     }
@@ -115,8 +110,8 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
                     log.warn(message);
                     throw new RequestInterruptionException(message, e);
                 } catch (Exception e) {
-                    log.warn("Request interceptor (" + requestInterceptor + ") failed to execute on start (" + req
-                        .getRequestId() + "): " + e.getMessage());
+                    log.warn("Request interceptor ({}) failed to execute on start ({}): {}",
+                        () -> requestInterceptor, req::getRequestId, e::getMessage);
                 }
             }
         }
@@ -128,6 +123,7 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
     /* (non-Javadoc)
      * @see org.dspace.services.RequestService#endRequest(java.lang.Exception)
      */
+    @Override
     public String endRequest(Exception failure) {
         String requestId = null;
         try {
@@ -153,15 +149,14 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
                         requestInterceptor.onEnd(requestId, (failure == null), failure);
                     } catch (RequestInterruptionException e) {
                         log.warn(
-                            "Attempt to stop request from ending by an exception from the interceptor (" +
-                                requestInterceptor + "), cannot stop requests from ending though so request end " +
-                                "continues, this may be an error: " + e
-                                .getMessage());
+                            "Attempt to stop request from ending by an exception from the interceptor ({}),"
+                                + " cannot stop requests from ending though so request end"
+                                + " continues, this may be an error: {}",
+                            () -> requestInterceptor, e::getMessage);
                     } catch (Exception e) {
                         log.warn(
-                            "Request interceptor (" + requestInterceptor + ") failed to execute on end (" + requestId
-                                + "): " + e
-                                .getMessage());
+                            "Request interceptor ({}) failed to execute on end ({}): {}",
+                            () -> requestInterceptor, () -> requestId, e::getMessage);
                     }
                 }
             }
@@ -175,7 +170,7 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
      * @return the current list of interceptors in the correct order
      */
     private List<RequestInterceptor> getInterceptors(boolean reverse) {
-        ArrayList<RequestInterceptor> l = new ArrayList<RequestInterceptor>(this.interceptorsMap.values());
+        ArrayList<RequestInterceptor> l = new ArrayList<>(this.interceptorsMap.values());
         OrderedServiceComparator comparator = new OrderedServiceComparator();
         Collections.sort(l, comparator);
         if (reverse) {
@@ -187,6 +182,7 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
     /* (non-Javadoc)
      * @see org.dspace.services.RequestService#registerRequestListener(org.dspace.services.model.RequestInterceptor)
      */
+    @Override
     public void registerRequestInterceptor(RequestInterceptor interceptor) {
         if (interceptor == null) {
             throw new IllegalArgumentException("Cannot register an interceptor that is null");
@@ -198,11 +194,12 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
         this.interceptorsMap.put(key, interceptor);
     }
 
-    /**
+    /*
      * (non-Javadoc)
      *
      * @see org.dspace.services.RequestService#getCurrentUserId()
      */
+    @Override
     public String getCurrentUserId() {
         Request currentRequest = getCurrentRequest();
         if (currentRequest == null) {
@@ -212,11 +209,12 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
         }
     }
 
-    /**
+    /*
      * (non-Javadoc)
      *
      * @see org.dspace.services.RequestService#setCurrentUserId()
      */
+    @Override
     public void setCurrentUserId(UUID epersonId) {
         Request currentRequest = getCurrentRequest();
         if (currentRequest != null) {
@@ -227,6 +225,7 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
     /* (non-Javadoc)
      * @see org.dspace.services.RequestService#getCurrentRequestId()
      */
+    @Override
     public String getCurrentRequestId() {
         Request req = requests.getCurrent();
         if (req != null) {
@@ -239,6 +238,7 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
     /* (non-Javadoc)
      * @see org.dspace.services.RequestService#getCurrentRequest()
      */
+    @Override
     public Request getCurrentRequest() {
         return requests.getCurrent();
     }
@@ -247,7 +247,7 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
      * Class to hold the current request. Uses Map keyed on current thread id.
      */
     private class RequestHolder {
-        Map<Long, Request> requestMap = new ConcurrentHashMap<Long, Request>();
+        Map<Long, Request> requestMap = new ConcurrentHashMap<>();
 
         Request getCurrent() {
             return requestMap.get(Thread.currentThread().getId());
@@ -298,5 +298,5 @@ public final class StatelessRequestServiceImpl implements RequestService, Initia
         }
     }
 
-    private RequestHolder requests = new RequestHolder();
+    private final RequestHolder requests = new RequestHolder();
 }

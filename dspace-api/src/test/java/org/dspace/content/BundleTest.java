@@ -12,7 +12,7 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
@@ -512,6 +512,41 @@ public class BundleTest extends AbstractDSpaceObjectTest {
         assertThat("testRemoveBitstreamAuth 0", bundleService.getBitstreamByName(b, bs.getName()), nullValue());
     }
 
+
+    /**
+     * Test removeBitstream method and also the unsetPrimaryBitstreamID method, of class Bundle.
+     */
+    @Test
+    public void testRemoveBitstreamAuthAndUnsetPrimaryBitstreamID()
+            throws IOException, SQLException, AuthorizeException {
+        // Allow Item WRITE permissions
+        doNothing().when(authorizeServiceSpy).authorizeAction(context, item, Constants.WRITE);
+        // Allow Bundle ADD permissions
+        doNothing().when(authorizeServiceSpy).authorizeAction(context, b, Constants.ADD);
+        // Allow Bundle REMOVE permissions
+        doNothing().when(authorizeServiceSpy).authorizeAction(context, b, Constants.REMOVE);
+        // Allow Bitstream WRITE permissions
+        doNothing().when(authorizeServiceSpy)
+                   .authorizeAction(any(Context.class), any(Bitstream.class), eq(Constants.WRITE));
+        // Allow Bitstream DELETE permissions
+        doNothing().when(authorizeServiceSpy)
+                   .authorizeAction(any(Context.class), any(Bitstream.class), eq(Constants.DELETE));
+
+
+        context.turnOffAuthorisationSystem();
+        //set a value different than default
+        File f = new File(testProps.get("test.bitstream").toString());
+        Bitstream bs = bitstreamService.create(context, new FileInputStream(f));
+        bundleService.addBitstream(context, b, bs);
+        b.setPrimaryBitstreamID(bs);
+        context.restoreAuthSystemState();
+
+        assertThat("testRemoveBitstreamAuthAndUnsetPrimaryBitstreamID 0", b.getPrimaryBitstream(), equalTo(bs));
+        //remove bitstream
+        bundleService.removeBitstream(context, b, bs);
+        //is -1 when not set
+        assertThat("testRemoveBitstreamAuthAndUnsetPrimaryBitstreamID 1", b.getPrimaryBitstream(), equalTo(null));
+    }
 
     /**
      * Test of update method, of class Bundle.

@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * This linkRepository will deal with calls to the /output endpoint of a given Process.
  * It'll retrieve the output for the given Process and return this as a {@link BitstreamRest} object
  */
-@Component(ProcessRest.CATEGORY + "." + ProcessRest.NAME + "." + ProcessRest.OUTPUT)
+@Component(ProcessRest.CATEGORY + "." + ProcessRest.PLURAL_NAME + "." + ProcessRest.OUTPUT)
 public class ProcessOutputLinkRepository extends AbstractDSpaceRestRepository implements LinkRestRepository {
 
     @Autowired
@@ -50,7 +50,7 @@ public class ProcessOutputLinkRepository extends AbstractDSpaceRestRepository im
      * @throws SQLException         If something goes wrong
      * @throws AuthorizeException   If something goes wrong
      */
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasPermission(#processId, 'PROCESS', 'READ')")
     public BitstreamRest getOutputFromProcess(@Nullable HttpServletRequest request,
                                               Integer processId,
                                               @Nullable Pageable optionalPageable,

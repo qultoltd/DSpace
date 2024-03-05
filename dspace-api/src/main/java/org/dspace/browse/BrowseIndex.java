@@ -13,7 +13,8 @@ import java.util.StringTokenizer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.dspace.core.ConfigurationManager;
+import org.dspace.services.ConfigurationService;
+import org.dspace.services.factory.DSpaceServicesFactory;
 import org.dspace.sort.SortException;
 import org.dspace.sort.SortOption;
 
@@ -21,11 +22,13 @@ import org.dspace.sort.SortOption;
  * This class holds all the information about a specifically configured
  * BrowseIndex.  It is responsible for parsing the configuration, understanding
  * about what sort options are available, and what the names of the database
- * tables that hold all the information are actually called.
+ * tables that hold all the information are actually called. Hierarchical browse
+ * indexes also contain information about the vocabulary they're using, see:
+ * {@link org.dspace.content.authority.DSpaceControlledVocabularyIndex}
  *
  * @author Richard Jones
  */
-public final class BrowseIndex {
+public class BrowseIndex {
     /** the configuration number, as specified in the config */
     /**
      * used for single metadata browse tables for generating the table name
@@ -101,7 +104,7 @@ public final class BrowseIndex {
      *
      * @param baseName The base of the table name
      */
-    private BrowseIndex(String baseName) {
+    protected BrowseIndex(String baseName) {
         try {
             number = -1;
             tableBaseName = baseName;
@@ -313,14 +316,6 @@ public final class BrowseIndex {
     }
 
     /**
-     * @param name The name to set.
-     */
-//  public void setName(String name)
-//  {
-//     this.name = name;
-//  }
-
-    /**
      * Get the SortOption associated with this index.
      *
      * @return SortOption
@@ -414,6 +409,7 @@ public final class BrowseIndex {
      * @return the name of the table
      * @deprecated 1.5
      */
+    @Deprecated
     public static String getTableName(int number, boolean isCommunity, boolean isCollection, boolean isDistinct,
                                       boolean isMap) {
         return BrowseIndex.getTableName(makeTableBaseName(number), isCommunity, isCollection, isDistinct, isMap);
@@ -462,6 +458,7 @@ public final class BrowseIndex {
      * @return the name of the table
      * @deprecated 1.5
      */
+    @Deprecated
     public String getTableName(boolean isCommunity, boolean isCollection, boolean isDistinct, boolean isMap) {
         if (isDistinct || isMap) {
             return BrowseIndex.getTableName(number, isCommunity, isCollection, isDistinct, isMap);
@@ -482,6 +479,7 @@ public final class BrowseIndex {
      * @return the name of the table
      * @deprecated 1.5
      */
+    @Deprecated
     public String getTableName(boolean isCommunity, boolean isCollection) {
         return getTableName(isCommunity, isCollection, false, false);
     }
@@ -514,6 +512,7 @@ public final class BrowseIndex {
      * @return table name
      * @deprecated 1.5
      */
+    @Deprecated
     public String getTableName(boolean isDistinct, boolean isCommunity, boolean isCollection) {
         return getTableName(isCommunity, isCollection, isDistinct, false);
     }
@@ -649,6 +648,7 @@ public final class BrowseIndex {
      * @throws BrowseException if browse error
      * @deprecated
      */
+    @Deprecated
     public static String[] tables()
         throws BrowseException {
         BrowseIndex[] bis = getBrowseIndices();
@@ -670,13 +670,14 @@ public final class BrowseIndex {
         throws BrowseException {
         int idx = 1;
         String definition;
-        ArrayList<BrowseIndex> browseIndices = new ArrayList<BrowseIndex>();
+        ArrayList<BrowseIndex> browseIndices = new ArrayList<>();
 
-        while (((definition = ConfigurationManager.getProperty("webui.browse.index." + idx))) != null) {
+        ConfigurationService configurationService
+                = DSpaceServicesFactory.getInstance().getConfigurationService();
+        while (((definition = configurationService.getProperty("webui.browse.index." + idx))) != null) {
             BrowseIndex bi = new BrowseIndex(definition, idx);
-            bi.displayFrequencies = Boolean.valueOf(ConfigurationManager
-                                                        .getBooleanProperty("webui.browse.metadata.show-freq."
-                                                                                + idx, true));
+            bi.displayFrequencies = configurationService
+                    .getBooleanProperty("webui.browse.metadata.show-freq." + idx, true);
 
             browseIndices.add(bi);
             idx++;
@@ -804,8 +805,8 @@ public final class BrowseIndex {
      * @return true or false
      */
     public boolean isTagCloudEnabled() {
-
-        return ConfigurationManager.getBooleanProperty("webui.browse.index.tagcloud." + number);
-
+        ConfigurationService configurationService
+                = DSpaceServicesFactory.getInstance().getConfigurationService();
+        return configurationService.getBooleanProperty("webui.browse.index.tagcloud." + number);
     }
 }

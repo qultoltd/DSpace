@@ -30,7 +30,8 @@ import org.springframework.stereotype.Component;
  *
  * @author Mykhaylo Boychuk ($science.it)
  */
-@Component(VocabularyRest.CATEGORY + "." + VocabularyEntryDetailsRest.NAME + "." + VocabularyEntryDetailsRest.PARENT)
+@Component(VocabularyRest.CATEGORY + "." + VocabularyEntryDetailsRest.PLURAL_NAME + "." +
+    VocabularyEntryDetailsRest.PARENT)
 public class VocabularyEntryDetailsParentLinkRepository extends AbstractDSpaceRestRepository
     implements LinkRestRepository {
 
@@ -40,7 +41,7 @@ public class VocabularyEntryDetailsParentLinkRepository extends AbstractDSpaceRe
     @Autowired
     private AuthorityUtils authorityUtils;
 
-    @PreAuthorize("hasAuthority('AUTHENTICATED')")
+    @PreAuthorize("permitAll()")
     public VocabularyEntryDetailsRest getParent(@Nullable HttpServletRequest request, String name,
             @Nullable Pageable optionalPageable, Projection projection) {
         Context context = obtainContext();

@@ -16,6 +16,7 @@ import org.dspace.app.itemimport.BatchUpload;
 import org.dspace.content.Collection;
 import org.dspace.core.Context;
 import org.dspace.eperson.EPerson;
+import org.dspace.scripts.handler.DSpaceRunnableHandler;
 
 /**
  * Import items into DSpace. The conventional use is upload files by copying
@@ -105,7 +106,7 @@ public interface ItemImportService {
                                 String inputType, Context context, boolean template) throws Exception;
 
     /**
-     * Since the BTE batch import is done in a new thread we are unable to communicate
+     * If a batch import is done in a new thread we are unable to communicate
      * with calling method about success or failure. We accomplish this
      * communication with email instead. Send a success email once the batch
      * import is complete
@@ -119,7 +120,7 @@ public interface ItemImportService {
                                     String fileName) throws MessagingException;
 
     /**
-     * Since the BTE batch import is done in a new thread we are unable to communicate
+     * If a batch import is done in a new thread we are unable to communicate
      * with calling method about success or failure. We accomplis this
      * communication with email instead. Send an error email if the batch
      * import fails
@@ -184,21 +185,6 @@ public interface ItemImportService {
     public void deleteItems(Context c, String mapfile) throws Exception;
 
     /**
-     * Add items
-     *
-     * @param c             DSpace Context
-     * @param mycollections List of Collections
-     * @param sourcedir     source directory
-     * @param mapfile       map file
-     * @param template      whether to use template item
-     * @param bteInputType  The input type of the data (bibtex, csv, etc.), in case of local file
-     * @param workingDir    working directory
-     * @throws Exception if error
-     */
-    public void addBTEItems(Context c, List<Collection> mycollections, String sourcedir, String mapfile,
-                            boolean template, String bteInputType, String workingDir) throws Exception;
-
-    /**
      * Get temporary work directory
      *
      * @return directory as string
@@ -226,6 +212,13 @@ public interface ItemImportService {
     public void setTest(boolean isTest);
 
     /**
+     * Set exclude-content flag.
+     *
+     * @param isExcludeContent true or false
+     */
+    public void setExcludeContent(boolean isExcludeContent);
+
+    /**
      * Set resume flag
      *
      * @param isResume true or false
@@ -250,4 +243,10 @@ public interface ItemImportService {
      * @param isQuiet true or false
      */
     public void setQuiet(boolean isQuiet);
+
+    /**
+     * Set the DSpace Runnable Handler
+     * @param handler
+     */
+    public void setHandler(DSpaceRunnableHandler handler);
 }

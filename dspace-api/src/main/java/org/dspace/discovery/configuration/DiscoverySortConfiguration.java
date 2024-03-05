@@ -9,6 +9,7 @@ package org.dspace.discovery.configuration;
 
 import java.util.ArrayList;
 import java.util.List;
+import javax.annotation.Nullable;
 
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -20,25 +21,12 @@ public class DiscoverySortConfiguration {
 
     public static final String SCORE = "score";
 
-    /** Attributes used for sorting of results **/
-    public enum SORT_ORDER {
-        desc,
-        asc
-    }
-
-    private DiscoverySortFieldConfiguration defaultSort = null;
-
     private List<DiscoverySortFieldConfiguration> sortFields = new ArrayList<DiscoverySortFieldConfiguration>();
 
-    private SORT_ORDER defaultSortOrder = SORT_ORDER.desc;
-
-    public DiscoverySortFieldConfiguration getDefaultSort() {
-        return defaultSort;
-    }
-
-    public void setDefaultSort(DiscoverySortFieldConfiguration defaultSort) {
-        this.defaultSort = defaultSort;
-    }
+    /**
+     * Default sort configuration to use when needed
+     */
+    @Nullable private DiscoverySortFieldConfiguration defaultSortField;
 
     public List<DiscoverySortFieldConfiguration> getSortFields() {
         return sortFields;
@@ -48,12 +36,12 @@ public class DiscoverySortConfiguration {
         this.sortFields = sortFields;
     }
 
-    public SORT_ORDER getDefaultSortOrder() {
-        return defaultSortOrder;
+    public DiscoverySortFieldConfiguration getDefaultSortField() {
+        return defaultSortField;
     }
 
-    public void setDefaultSortOrder(SORT_ORDER defaultSortOrder) {
-        this.defaultSortOrder = defaultSortOrder;
+    public void setDefaultSortField(DiscoverySortFieldConfiguration configuration) {
+        this.defaultSortField = configuration;
     }
 
     public DiscoverySortFieldConfiguration getSortFieldConfiguration(String sortField) {
@@ -65,10 +53,6 @@ public class DiscoverySortConfiguration {
             DiscoverySortFieldConfiguration configuration = new DiscoverySortFieldConfiguration();
             configuration.setMetadataField(SCORE);
             return configuration;
-        }
-
-        if (defaultSort != null && StringUtils.equals(defaultSort.getMetadataField(), sortField)) {
-            return defaultSort;
         }
 
         for (DiscoverySortFieldConfiguration sortFieldConfiguration : CollectionUtils.emptyIfNull(sortFields)) {

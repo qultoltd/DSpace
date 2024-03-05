@@ -14,19 +14,24 @@ import java.util.List;
 import javax.servlet.http.HttpServletRequest;
 
 import org.dspace.authorize.AuthorizeException;
+import org.dspace.content.DCDate;
+import org.dspace.content.MetadataSchemaEnum;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.ItemService;
 import org.dspace.core.Context;
 import org.dspace.workflow.WorkflowException;
 import org.dspace.xmlworkflow.RoleMembers;
 import org.dspace.xmlworkflow.WorkflowConfigurationException;
+import org.dspace.xmlworkflow.factory.XmlWorkflowServiceFactory;
 import org.dspace.xmlworkflow.state.Step;
 import org.dspace.xmlworkflow.storedcomponents.XmlWorkflowItem;
 
 /**
- * This abstract class represents an api action
- * Each step in the xml workflow consists of a number of actions
- * this abstract action contains some utility methods and the methods
+ * This abstract class represents a workflow action.
+ * Each step in the workflow consists of a number of actions.
+ * This abstract action contains some utility methods and the methods
  * that each of these actions must implement including:
- * activating, execution, ...
+ * activating, execution, ....
  *
  * @author Bram De Schouwer (bram.deschouwer at dot com)
  * @author Kevin Van de Velde (kevin at atmire dot com)
@@ -37,10 +42,35 @@ public abstract class Action {
 
     private WorkflowActionConfig parent;
     private static final String ERROR_FIELDS_ATTRIBUTE = "dspace.workflow.error_fields";
+    private List<String> advancedOptions = new ArrayList<>();
+    private List<ActionAdvancedInfo> advancedInfo = new ArrayList<>();
 
+    /**
+     * Called when a workflow item becomes eligible for this Action.
+     *
+     * @param c current DSpace session.
+     * @param wf the eligible item.
+     * @throws SQLException passed through.
+     * @throws IOException passed through.
+     * @throws AuthorizeException passed through.
+     * @throws WorkflowException passed through.
+     */
     public abstract void activate(Context c, XmlWorkflowItem wf)
         throws SQLException, IOException, AuthorizeException, WorkflowException;
 
+    /**
+     * Called when the action is to be performed.
+     *
+     * @param c current DSpace session.
+     * @param wfi the item on which the action is to be performed.
+     * @param step the workflow step in which the action is performed.
+     * @param request the current client request.
+     * @return the result of performing the action.
+     * @throws SQLException passed through.
+     * @throws AuthorizeException passed through.
+     * @throws IOException passed through.
+     * @throws WorkflowException passed through.
+     */
     public abstract ActionResult execute(Context c, XmlWorkflowItem wfi, Step step, HttpServletRequest request)
         throws SQLException, AuthorizeException, IOException, WorkflowException;
 
@@ -64,29 +94,60 @@ public abstract class Action {
         return false;
     }
 
+    /**
+     * Get the configuration of this Action.
+     * @return details of this instance of an Action.
+     */
     public WorkflowActionConfig getParent() {
         return parent;
     }
 
+    /**
+     * Configure this Action.
+     * @param parent details of this instance of an Action.
+     */
     public void setParent(WorkflowActionConfig parent) {
         this.parent = parent;
     }
 
+    /**
+     * Build provenance information for the action.
+     * @return a String identifying the step and action.
+     */
     public String getProvenanceStartId() {
         return "Step: " + getParent().getStep().getId() + " - action:" + getParent().getId();
     }
 
+    /**
+     * Notify action role members that an item requires action.
+     *
+     * @param c current DSpace session.
+     * @param wfi the needy item.
+     * @param members users who may fulfill the role.
+     * @throws SQLException passed through.
+     * @throws IOException passed through.
+     */
     public void alertUsersOnActivation(Context c, XmlWorkflowItem wfi, RoleMembers members)
         throws SQLException, IOException {
-
     }
 
+    /**
+     * Is this client authorized to act on this item?
+     *
+     * @param context current DSpace session.
+     * @param request current client request.
+     * @param wfi the workflow item in question.
+     * @return true if authorized.
+     * @throws SQLException passed through.
+     * @throws AuthorizeException passed through.
+     * @throws IOException passed through.
+     * @throws WorkflowConfigurationException if the workflow is mis-configured.
+     */
     public abstract boolean isAuthorized(Context context, HttpServletRequest request, XmlWorkflowItem wfi)
         throws SQLException, AuthorizeException, IOException, WorkflowConfigurationException;
 
-
     /**
-     * Sets th list of all UI fields which had errors that occurred during the
+     * Sets the list of all UI fields which had errors that occurred during the
      * step processing. This list is for usage in generating the appropriate
      * error message(s) in the UI.
      *
@@ -138,4 +199,58 @@ public abstract class Action {
         //save updated list
         setErrorFields(request, errorFields);
     }
+
+    /**
+     * Returns a list of advanced options that the user can select at this action
+     * @return  A list of advanced options of this action, resulting in the next step of the workflow
+     */
+    protected List<String> getAdvancedOptions() {
+        return advancedOptions;
+    }
+
+    /**
+     * Returns true if this Action has advanced options, false if it doesn't
+     * @return true if there are advanced options, false otherwise
+     */
+    protected boolean isAdvanced() {
+        return !getAdvancedOptions().isEmpty();
+    }
+
+    /**
+     * Returns a list of advanced info required by the advanced options
+     * @return  A list of advanced info required by the advanced options
+     */
+    protected List<ActionAdvancedInfo> getAdvancedInfo() {
+        return advancedInfo;
+    }
+
+
+    /**
+     * Adds info in the metadata field dc.description.provenance about item being approved containing in which step
+     * it was approved, which user approved it and the time
+     *
+     * @param c   DSpace contect
+     * @param wfi Workflow item we're adding workflow accept provenance on
+     */
+    public void addApprovedProvenance(Context c, XmlWorkflowItem wfi) throws SQLException, AuthorizeException {
+        ItemService itemService = ContentServiceFactory.getInstance().getItemService();
+
+        //Add the provenance for the accept
+        String now = DCDate.getCurrent().toString();
+
+        // Get user's name + email address
+        String usersName =
+            XmlWorkflowServiceFactory.getInstance().getXmlWorkflowService().getEPersonName(c.getCurrentUser());
+
+        String provDescription = getProvenanceStartId() + " Approved for entry into archive by " + usersName + " on "
+            + now + " (GMT) ";
+
+        // Add to item as a DC field
+        c.turnOffAuthorisationSystem();
+        itemService.addMetadata(c, wfi.getItem(), MetadataSchemaEnum.DC.getName(), "description", "provenance", "en",
+            provDescription);
+        itemService.update(c, wfi.getItem());
+        c.restoreAuthSystemState();
+    }
+
 }

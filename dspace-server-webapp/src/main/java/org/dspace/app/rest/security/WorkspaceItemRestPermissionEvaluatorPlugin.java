@@ -11,35 +11,43 @@ import java.io.Serializable;
 import java.sql.SQLException;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.dspace.app.rest.model.WorkspaceItemRest;
 import org.dspace.app.rest.utils.ContextUtil;
+import org.dspace.authorize.service.AuthorizeService;
 import org.dspace.content.WorkspaceItem;
 import org.dspace.content.service.WorkspaceItemService;
 import org.dspace.core.Context;
 import org.dspace.eperson.EPerson;
 import org.dspace.services.RequestService;
 import org.dspace.services.model.Request;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.dspace.supervision.service.SupervisionOrderService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
 /**
- * {@link RestPermissionEvaluatorPlugin} class that evaluate READ, WRITE and DELETE permissions over a WorkspaceItem
- * 
+ * {@link RestPermissionEvaluatorPlugin} class that evaluate READ, WRITE and DELETE permissions over a WorkspaceItem.
+ *
  * @author Mykhaylo Boychuk (mykhaylo.boychuk at 4science.it)
  */
 @Component
 public class WorkspaceItemRestPermissionEvaluatorPlugin extends RestObjectPermissionEvaluatorPlugin {
 
-    private static final Logger log = LoggerFactory.getLogger(WorkspaceItemRestPermissionEvaluatorPlugin.class);
+    private static final Logger log = LogManager.getLogger();
 
     @Autowired
     private RequestService requestService;
 
     @Autowired
     WorkspaceItemService wis;
+
+    @Autowired
+    private SupervisionOrderService supervisionOrderService;
+
+    @Autowired
+    private AuthorizeService authorizeService;
 
     @Override
     public boolean hasDSpacePermission(Authentication authentication, Serializable targetId, String targetType,
@@ -56,13 +64,13 @@ public class WorkspaceItemRestPermissionEvaluatorPlugin extends RestObjectPermis
         }
 
         Request request = requestService.getCurrentRequest();
-        Context context = ContextUtil.obtainContext(request.getServletRequest());
+        Context context = ContextUtil.obtainContext(request.getHttpServletRequest());
 
         EPerson ePerson = null;
         WorkspaceItem witem = null;
         try {
             ePerson = context.getCurrentUser();
-            Integer dsoId = Integer.parseInt(targetId.toString());
+            int dsoId = Integer.parseInt(targetId.toString());
 
             // anonymous user
             if (ePerson == null) {
@@ -82,8 +90,17 @@ public class WorkspaceItemRestPermissionEvaluatorPlugin extends RestObjectPermis
                     return true;
                 }
             }
+
+            if (witem.getItem() != null) {
+                if (supervisionOrderService.isSupervisor(context, ePerson, witem.getItem())) {
+                    return authorizeService.authorizeActionBoolean(context, ePerson, witem.getItem(),
+                                                                   restPermission.getDspaceApiActionId(),
+                                                                   true);
+                }
+            }
+
         } catch (SQLException e) {
-            log.error(e.getMessage(), e);
+            log.error(e::getMessage, e);
         }
 
         return false;

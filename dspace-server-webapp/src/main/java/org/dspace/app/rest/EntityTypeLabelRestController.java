@@ -13,6 +13,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.dspace.app.rest.converter.ConverterService;
 import org.dspace.app.rest.model.EntityTypeRest;
+import org.dspace.app.rest.model.hateoas.EntityTypeResource;
 import org.dspace.app.rest.utils.ContextUtil;
 import org.dspace.app.rest.utils.Utils;
 import org.dspace.content.EntityType;
@@ -39,7 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
  * @author Maria Verdonck (Atmire) on 2019-12-13
  */
 @RestController
-@RequestMapping("/api/" + EntityTypeRest.CATEGORY + "/" + EntityTypeRest.NAME_PLURAL)
+@RequestMapping("/api/" + EntityTypeRest.CATEGORY + "/" + EntityTypeRest.PLURAL_NAME)
 public class EntityTypeLabelRestController {
 
     protected final EntityTypeService entityTypeService = ContentServiceFactory.getInstance().getEntityTypeService();
@@ -51,15 +52,15 @@ public class EntityTypeLabelRestController {
     protected Utils utils;
 
     @GetMapping("/label/{entity-type-label}")
-    public EntityTypeRest get(HttpServletRequest request, HttpServletResponse response,
-                              @PathVariable("entity-type-label") String label) {
+    public EntityTypeResource get(HttpServletRequest request, HttpServletResponse response,
+                                  @PathVariable("entity-type-label") String label) {
         Context context = ContextUtil.obtainContext(request);
         try {
             EntityType entityType = this.entityTypeService.findByEntityType(context, label);
             if (entityType == null) {
                 throw new ResourceNotFoundException("There was no entityType found with label: " + label);
             }
-            return converter.toRest(entityType, utils.obtainProjection());
+            return converter.toResource(converter.toRest(entityType, utils.obtainProjection()));
         } catch (SQLException e) {
             throw new RuntimeException(e.getMessage(), e);
         }

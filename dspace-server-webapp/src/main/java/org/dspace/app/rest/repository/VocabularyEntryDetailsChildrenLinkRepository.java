@@ -35,7 +35,8 @@ import org.springframework.stereotype.Component;
  *
  * @author Mykhaylo Boychuk (4Science.it)
  */
-@Component(VocabularyRest.CATEGORY + "." + VocabularyEntryDetailsRest.NAME + "." + VocabularyEntryDetailsRest.CHILDREN)
+@Component(VocabularyRest.CATEGORY + "." + VocabularyEntryDetailsRest.PLURAL_NAME + "." +
+    VocabularyEntryDetailsRest.CHILDREN)
 public class VocabularyEntryDetailsChildrenLinkRepository extends AbstractDSpaceRestRepository
     implements LinkRestRepository {
 
@@ -45,7 +46,7 @@ public class VocabularyEntryDetailsChildrenLinkRepository extends AbstractDSpace
     @Autowired
     private AuthorityUtils authorityUtils;
 
-    @PreAuthorize("hasAuthority('AUTHENTICATED')")
+    @PreAuthorize("permitAll()")
     public Page<VocabularyEntryDetailsRest> getChildren(@Nullable HttpServletRequest request, String name,
                                                         @Nullable Pageable optionalPageable, Projection projection) {
 

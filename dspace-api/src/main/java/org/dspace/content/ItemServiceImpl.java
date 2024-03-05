@@ -11,18 +11,23 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.Logger;
+import org.dspace.app.requestitem.RequestItem;
+import org.dspace.app.requestitem.service.RequestItemService;
 import org.dspace.app.util.AuthorizeUtil;
 import org.dspace.authorize.AuthorizeConfiguration;
 import org.dspace.authorize.AuthorizeException;
@@ -37,22 +42,43 @@ import org.dspace.content.service.BitstreamService;
 import org.dspace.content.service.BundleService;
 import org.dspace.content.service.CollectionService;
 import org.dspace.content.service.CommunityService;
+import org.dspace.content.service.EntityTypeService;
 import org.dspace.content.service.InstallItemService;
 import org.dspace.content.service.ItemService;
 import org.dspace.content.service.MetadataSchemaService;
 import org.dspace.content.service.RelationshipService;
 import org.dspace.content.service.WorkspaceItemService;
 import org.dspace.content.virtual.VirtualMetadataPopulator;
+import org.dspace.contentreport.QueryPredicate;
 import org.dspace.core.Constants;
 import org.dspace.core.Context;
-import org.dspace.core.LogManager;
+import org.dspace.core.LogHelper;
+import org.dspace.discovery.DiscoverQuery;
+import org.dspace.discovery.DiscoverResult;
+import org.dspace.discovery.SearchService;
+import org.dspace.discovery.SearchServiceException;
+import org.dspace.discovery.indexobject.IndexableItem;
 import org.dspace.eperson.EPerson;
 import org.dspace.eperson.Group;
+import org.dspace.eperson.service.GroupService;
+import org.dspace.eperson.service.SubscribeService;
 import org.dspace.event.Event;
 import org.dspace.harvest.HarvestedItem;
 import org.dspace.harvest.service.HarvestedItemService;
+import org.dspace.identifier.DOI;
 import org.dspace.identifier.IdentifierException;
+import org.dspace.identifier.service.DOIService;
 import org.dspace.identifier.service.IdentifierService;
+import org.dspace.orcid.OrcidHistory;
+import org.dspace.orcid.OrcidQueue;
+import org.dspace.orcid.OrcidToken;
+import org.dspace.orcid.model.OrcidEntityType;
+import org.dspace.orcid.service.OrcidHistoryService;
+import org.dspace.orcid.service.OrcidQueueService;
+import org.dspace.orcid.service.OrcidSynchronizationService;
+import org.dspace.orcid.service.OrcidTokenService;
+import org.dspace.profile.service.ResearcherProfileService;
+import org.dspace.qaevent.dao.QAEventsDAO;
 import org.dspace.services.ConfigurationService;
 import org.dspace.versioning.service.VersioningService;
 import org.dspace.workflow.WorkflowItemService;
@@ -79,6 +105,8 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
     @Autowired(required = true)
     protected CommunityService communityService;
     @Autowired(required = true)
+    protected GroupService groupService;
+    @Autowired(required = true)
     protected AuthorizeService authorizeService;
     @Autowired(required = true)
     protected BundleService bundleService;
@@ -91,11 +119,15 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
     @Autowired(required = true)
     protected InstallItemService installItemService;
     @Autowired(required = true)
+    protected SearchService searchService;
+    @Autowired(required = true)
     protected ResourcePolicyService resourcePolicyService;
     @Autowired(required = true)
     protected CollectionService collectionService;
     @Autowired(required = true)
     protected IdentifierService identifierService;
+    @Autowired(required = true)
+    protected DOIService doiService;
     @Autowired(required = true)
     protected VersioningService versioningService;
     @Autowired(required = true)
@@ -117,8 +149,33 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
     @Autowired(required = true)
     private RelationshipMetadataService relationshipMetadataService;
 
+    @Autowired(required = true)
+    private EntityTypeService entityTypeService;
+
+    @Autowired
+    private OrcidTokenService orcidTokenService;
+
+    @Autowired(required = true)
+    private OrcidHistoryService orcidHistoryService;
+
+    @Autowired(required = true)
+    private OrcidQueueService orcidQueueService;
+
+    @Autowired(required = true)
+    private OrcidSynchronizationService orcidSynchronizationService;
+
+    @Autowired(required = true)
+    private ResearcherProfileService researcherProfileService;
+    @Autowired(required = true)
+    private RequestItemService requestItemService;
+
+    @Autowired(required = true)
+    protected SubscribeService subscribeService;
+
+    @Autowired
+    private QAEventsDAO qaEventsDao;
+
     protected ItemServiceImpl() {
-        super();
     }
 
     @Override
@@ -157,7 +214,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         Item item = itemDAO.findByID(context, Item.class, id);
         if (item == null) {
             if (log.isDebugEnabled()) {
-                log.debug(LogManager.getHeader(context, "find_item",
+                log.debug(LogHelper.getHeader(context, "find_item",
                                                "not_found,item_id=" + id));
             }
             return null;
@@ -165,7 +222,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
 
         // not null, return item
         if (log.isDebugEnabled()) {
-            log.debug(LogManager.getHeader(context, "find_item", "item_id="
+            log.debug(LogHelper.getHeader(context, "find_item", "item_id="
                 + id));
         }
 
@@ -174,16 +231,29 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
 
     @Override
     public Item create(Context context, WorkspaceItem workspaceItem) throws SQLException, AuthorizeException {
+        return create(context, workspaceItem, null);
+    }
+
+    @Override
+    public Item create(Context context, WorkspaceItem workspaceItem,
+                       UUID uuid) throws SQLException, AuthorizeException {
+        Collection collection = workspaceItem.getCollection();
+        authorizeService.authorizeAction(context, collection, Constants.ADD);
         if (workspaceItem.getItem() != null) {
             throw new IllegalArgumentException(
-                "Attempting to create an item for a workspace item that already contains an item");
+                    "Attempting to create an item for a workspace item that already contains an item");
         }
-        Item item = createItem(context);
+        Item item = null;
+        if (uuid != null) {
+            item = createItem(context, uuid);
+        } else {
+            item = createItem(context);
+        }
         workspaceItem.setItem(item);
 
 
-        log.info(LogManager.getHeader(context, "create_item", "item_id="
-            + item.getID()));
+        log.info(LogHelper.getHeader(context, "create_item", "item_id="
+                + item.getID()));
 
         return item;
     }
@@ -200,14 +270,13 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
             collection.setTemplateItem(template);
             template.setTemplateItemOf(collection);
 
-            log.info(LogManager.getHeader(context, "create_template_item",
+            log.info(LogHelper.getHeader(context, "create_template_item",
                                           "collection_id=" + collection.getID() + ",template_item_id="
                                               + template.getID()));
 
             return template;
-        } else {
-            return collection.getTemplateItem();
         }
+        return collection.getTemplateItem();
     }
 
     @Override
@@ -226,8 +295,19 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
     }
 
     @Override
+    public Iterator<Item> findAllRegularItems(Context context) throws SQLException {
+        return itemDAO.findAllRegularItems(context);
+    }
+
+    @Override
     public Iterator<Item> findBySubmitter(Context context, EPerson eperson) throws SQLException {
         return itemDAO.findBySubmitter(context, eperson);
+    }
+
+    @Override
+    public Iterator<Item> findBySubmitter(Context context, EPerson eperson, boolean retrieveAllItems)
+        throws SQLException {
+        return itemDAO.findBySubmitter(context, eperson, retrieveAllItems);
     }
 
     @Override
@@ -332,7 +412,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         // Check authorisation
         authorizeService.authorizeAction(context, item, Constants.ADD);
 
-        log.info(LogManager.getHeader(context, "add_bundle", "item_id="
+        log.info(LogHelper.getHeader(context, "add_bundle", "item_id="
             + item.getID() + ",bundle_id=" + bundle.getID()));
 
         // Check it's not already there
@@ -360,7 +440,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         // Check authorisation
         authorizeService.authorizeAction(context, item, Constants.REMOVE);
 
-        log.info(LogManager.getHeader(context, "remove_bundle", "item_id="
+        log.info(LogHelper.getHeader(context, "remove_bundle", "item_id="
             + item.getID() + ",bundle_id=" + bundle.getID()));
 
         context.addEvent(new Event(Event.REMOVE, Constants.ITEM, item.getID(),
@@ -410,6 +490,30 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         return bitstreamList;
     }
 
+    protected Item createItem(Context context, UUID uuid) throws SQLException, AuthorizeException {
+        Item item;
+        if (uuid != null) {
+            item = itemDAO.create(context, new Item(uuid));
+        } else {
+            item = itemDAO.create(context, new Item());
+        }
+        // set discoverable to true (default)
+        item.setDiscoverable(true);
+
+        // Call update to give the item a last modified date. OK this isn't
+        // amazingly efficient but creates don't happen that often.
+        context.turnOffAuthorisationSystem();
+        update(context, item);
+        context.restoreAuthSystemState();
+
+        context.addEvent(new Event(Event.CREATE, Constants.ITEM, item.getID(),
+                null, getIdentifiers(context, item)));
+
+        log.info(LogHelper.getHeader(context, "create_item", "item_id=" + item.getID()));
+
+        return item;
+    }
+
     protected Item createItem(Context context) throws SQLException, AuthorizeException {
         Item item = itemDAO.create(context, new Item());
         // set discoverable to true (default)
@@ -424,7 +528,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         context.addEvent(new Event(Event.CREATE, Constants.ITEM, item.getID(),
                                    null, getIdentifiers(context, item)));
 
-        log.info(LogManager.getHeader(context, "create_item", "item_id=" + item.getID()));
+        log.info(LogHelper.getHeader(context, "create_item", "item_id=" + item.getID()));
 
         return item;
     }
@@ -482,7 +586,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
             authorizeService.authorizeAction(context, item, Constants.WRITE);
         }
 
-        log.info(LogManager.getHeader(context, "update_item", "item_id="
+        log.info(LogHelper.getHeader(context, "update_item", "item_id="
             + item.getID()));
 
         super.update(context, item);
@@ -587,7 +691,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         }
 
         // Write log
-        log.info(LogManager.getHeader(context, "withdraw_item", "user="
+        log.info(LogHelper.getHeader(context, "withdraw_item", "user="
             + e.getEmail() + ",item_id=" + item.getID()));
     }
 
@@ -653,7 +757,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         }
 
         // Write log
-        log.info(LogManager.getHeader(context, "reinstate_item", "user="
+        log.info(LogHelper.getHeader(context, "reinstate_item", "user="
             + e.getEmail() + ",item_id=" + item.getID()));
     }
 
@@ -674,12 +778,13 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         context.addEvent(new Event(Event.DELETE, Constants.ITEM, item.getID(),
                                    item.getHandle(), getIdentifiers(context, item)));
 
-        log.info(LogManager.getHeader(context, "delete_item", "item_id="
+        log.info(LogHelper.getHeader(context, "delete_item", "item_id="
             + item.getID()));
-
+        //remove subscription related with it
+        subscribeService.deleteByDspaceObject(context, item);
         // Remove relationships
-        for (Relationship relationship : relationshipService.findByItem(context, item)) {
-            relationshipService.delete(context, relationship, false, false);
+        for (Relationship relationship : relationshipService.findByItem(context, item, -1, -1, false, false)) {
+            relationshipService.forceDelete(context, relationship, false, false);
         }
 
         // Remove bundles
@@ -688,8 +793,22 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         // Remove any Handle
         handleService.unbindHandle(context, item);
 
+        // Delete a DOI if linked to the item.
+        // If no DOI consumer or provider is configured, but a DOI remains linked to this item's uuid,
+        // hibernate will throw a foreign constraint exception.
+        // Here we use the DOI service directly as it is able to manage DOIs even without any configured
+        // consumer or provider.
+        DOI doi = doiService.findDOIByDSpaceObject(context, item);
+        if (doi != null) {
+            doi.setDSpaceObject(null);
+        }
+
         // remove version attached to the item
         removeVersion(context, item);
+
+        removeRequest(context, item);
+
+        removeOrcidSynchronizationStuff(context, item);
 
         // Also delete the item if it appears in a harvested collection.
         HarvestedItem hi = harvestedItemService.find(context, item);
@@ -698,12 +817,30 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
             harvestedItemService.delete(context, hi);
         }
 
+        OrcidToken orcidToken = orcidTokenService.findByProfileItem(context, item);
+        if (orcidToken != null) {
+            orcidToken.setProfileItem(null);
+        }
+
+        List<QAEventProcessed> qaEvents = qaEventsDao.findByItem(context, item);
+        for (QAEventProcessed qaEvent : qaEvents) {
+            qaEventsDao.delete(context, qaEvent);
+        }
+
         //Only clear collections after we have removed everything else from the item
         item.clearCollections();
         item.setOwningCollection(null);
 
         // Finally remove item row
         itemDAO.delete(context, item);
+    }
+
+    protected void removeRequest(Context context, Item item) throws SQLException {
+        Iterator<RequestItem> requestItems = requestItemService.findByItem(context, item);
+        while (requestItems.hasNext()) {
+            RequestItem requestItem = requestItems.next();
+            requestItemService.delete(context, requestItem);
+        }
     }
 
     @Override
@@ -723,7 +860,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
 
         bundleService.delete(context, b);
 
-        log.info(LogManager.getHeader(context, "remove_bundle", "item_id="
+        log.info(LogHelper.getHeader(context, "remove_bundle", "item_id="
             + item.getID() + ",bundle_id=" + b.getID()));
         context
             .addEvent(new Event(Event.REMOVE, Constants.ITEM, item.getID(), Constants.BUNDLE, b.getID(), b.getName()));
@@ -791,50 +928,135 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
     @Override
     public void inheritCollectionDefaultPolicies(Context context, Item item, Collection collection)
         throws SQLException, AuthorizeException {
-        adjustItemPolicies(context, item, collection);
-        adjustBundleBitstreamPolicies(context, item, collection);
+        inheritCollectionDefaultPolicies(context, item, collection, true);
+    }
 
-        log.debug(LogManager.getHeader(context, "item_inheritCollectionDefaultPolicies",
+    @Override
+    public void inheritCollectionDefaultPolicies(Context context, Item item, Collection collection,
+                                                 boolean replaceReadRPWithCollectionRP)
+        throws SQLException, AuthorizeException {
+
+        adjustItemPolicies(context, item, collection, replaceReadRPWithCollectionRP);
+        adjustBundleBitstreamPolicies(context, item, collection, replaceReadRPWithCollectionRP);
+
+        log.debug(LogHelper.getHeader(context, "item_inheritCollectionDefaultPolicies",
                                        "item_id=" + item.getID()));
     }
 
     @Override
     public void adjustBundleBitstreamPolicies(Context context, Item item, Collection collection)
         throws SQLException, AuthorizeException {
+        adjustBundleBitstreamPolicies(context, item, collection, true);
+    }
+
+    @Override
+    public void adjustBundleBitstreamPolicies(Context context, Item item, Collection collection,
+                                              boolean replaceReadRPWithCollectionRP)
+        throws SQLException, AuthorizeException {
+        // Bundles should inherit from DEFAULT_ITEM_READ so that if the item is readable, the files
+        // can be listed (even if they are themselves not readable as per DEFAULT_BITSTREAM_READ or other
+        // policies or embargos applied
+        List<ResourcePolicy> defaultCollectionBundlePolicies = authorizeService
+                .getPoliciesActionFilter(context, collection, Constants.DEFAULT_ITEM_READ);
+        // Bitstreams should inherit from DEFAULT_BITSTREAM_READ
+        List<ResourcePolicy> defaultCollectionBitstreamPolicies = authorizeService
+            .getPoliciesActionFilter(context, collection, Constants.DEFAULT_BITSTREAM_READ);
+
+        List<ResourcePolicy> defaultItemPolicies = authorizeService.findPoliciesByDSOAndType(context, item,
+                ResourcePolicy.TYPE_CUSTOM);
+        if (defaultCollectionBitstreamPolicies.size() < 1) {
+            throw new SQLException("Collection " + collection.getID()
+                                       + " (" + collection.getHandle() + ")"
+                                       + " has no default bitstream READ policies");
+        }
+        // TODO: should we also throw an exception if no DEFAULT_ITEM_READ?
+
+        boolean removeCurrentReadRPBitstream =
+            replaceReadRPWithCollectionRP && defaultCollectionBitstreamPolicies.size() > 0;
+        boolean removeCurrentReadRPBundle =
+            replaceReadRPWithCollectionRP && defaultCollectionBundlePolicies.size() > 0;
+
+        // remove all policies from bundles, add new ones
+        // Remove bundles
+        List<Bundle> bunds = item.getBundles();
+        for (Bundle mybundle : bunds) {
+            // If collection has default READ policies, remove the bundle's READ policies.
+            if (removeCurrentReadRPBundle) {
+                authorizeService.removePoliciesActionFilter(context, mybundle, Constants.READ);
+            }
+
+            // if come from InstallItem: remove all submission/workflow policies
+            authorizeService.removeAllPoliciesByDSOAndType(context, mybundle, ResourcePolicy.TYPE_SUBMISSION);
+            authorizeService.removeAllPoliciesByDSOAndType(context, mybundle, ResourcePolicy.TYPE_WORKFLOW);
+            addCustomPoliciesNotInPlace(context, mybundle, defaultItemPolicies);
+            addDefaultPoliciesNotInPlace(context, mybundle, defaultCollectionBundlePolicies);
+
+            for (Bitstream bitstream : mybundle.getBitstreams()) {
+                // If collection has default READ policies, remove the bundle's READ policies.
+                if (removeCurrentReadRPBitstream) {
+                    authorizeService.removePoliciesActionFilter(context, bitstream, Constants.READ);
+                }
+
+                // if come from InstallItem: remove all submission/workflow policies
+                removeAllPoliciesAndAddDefault(context, bitstream, defaultItemPolicies,
+                                               defaultCollectionBitstreamPolicies);
+            }
+        }
+    }
+
+    @Override
+    public void adjustBitstreamPolicies(Context context, Item item, Collection collection, Bitstream bitstream)
+        throws SQLException, AuthorizeException {
+        adjustBitstreamPolicies(context, item, collection, bitstream, true);
+    }
+
+    @Override
+    public void adjustBitstreamPolicies(Context context, Item item, Collection collection , Bitstream bitstream,
+                                        boolean replaceReadRPWithCollectionRP)
+        throws SQLException, AuthorizeException {
         List<ResourcePolicy> defaultCollectionPolicies = authorizeService
             .getPoliciesActionFilter(context, collection, Constants.DEFAULT_BITSTREAM_READ);
 
+        List<ResourcePolicy> defaultItemPolicies = authorizeService.findPoliciesByDSOAndType(context, item,
+                ResourcePolicy.TYPE_CUSTOM);
         if (defaultCollectionPolicies.size() < 1) {
             throw new SQLException("Collection " + collection.getID()
                                        + " (" + collection.getHandle() + ")"
                                        + " has no default bitstream READ policies");
         }
 
-        // remove all policies from bundles, add new ones
-        // Remove bundles
-        List<Bundle> bunds = item.getBundles();
-        for (Bundle mybundle : bunds) {
+        // remove all policies from bitstream, add new ones
+        removeAllPoliciesAndAddDefault(context, bitstream, defaultItemPolicies, defaultCollectionPolicies);
+    }
 
-            // if come from InstallItem: remove all submission/workflow policies
-            authorizeService.removeAllPoliciesByDSOAndType(context, mybundle, ResourcePolicy.TYPE_SUBMISSION);
-            authorizeService.removeAllPoliciesByDSOAndType(context, mybundle, ResourcePolicy.TYPE_WORKFLOW);
-            addDefaultPoliciesNotInPlace(context, mybundle, defaultCollectionPolicies);
-
-            for (Bitstream bitstream : mybundle.getBitstreams()) {
-                // if come from InstallItem: remove all submission/workflow policies
-                authorizeService.removeAllPoliciesByDSOAndType(context, bitstream, ResourcePolicy.TYPE_SUBMISSION);
-                authorizeService.removeAllPoliciesByDSOAndType(context, bitstream, ResourcePolicy.TYPE_WORKFLOW);
-                addDefaultPoliciesNotInPlace(context, bitstream, defaultCollectionPolicies);
-            }
-        }
+    private void removeAllPoliciesAndAddDefault(Context context, Bitstream bitstream,
+                                            List<ResourcePolicy> defaultItemPolicies,
+                                            List<ResourcePolicy> defaultCollectionPolicies)
+        throws SQLException, AuthorizeException {
+        authorizeService.removeAllPoliciesByDSOAndType(context, bitstream, ResourcePolicy.TYPE_SUBMISSION);
+        authorizeService.removeAllPoliciesByDSOAndType(context, bitstream, ResourcePolicy.TYPE_WORKFLOW);
+        addCustomPoliciesNotInPlace(context, bitstream, defaultItemPolicies);
+        addDefaultPoliciesNotInPlace(context, bitstream, defaultCollectionPolicies);
     }
 
     @Override
     public void adjustItemPolicies(Context context, Item item, Collection collection)
         throws SQLException, AuthorizeException {
+        adjustItemPolicies(context, item, collection, true);
+    }
+
+    @Override
+    public void adjustItemPolicies(Context context, Item item, Collection collection,
+                                   boolean replaceReadRPWithCollectionRP)
+        throws SQLException, AuthorizeException {
         // read collection's default READ policies
         List<ResourcePolicy> defaultCollectionPolicies = authorizeService
             .getPoliciesActionFilter(context, collection, Constants.DEFAULT_ITEM_READ);
+
+        // If collection has defaultREAD policies, remove the item's READ policies.
+        if (replaceReadRPWithCollectionRP && defaultCollectionPolicies.size() > 0) {
+            authorizeService.removePoliciesActionFilter(context, item, Constants.READ);
+        }
 
         // MUST have default policies
         if (defaultCollectionPolicies.size() < 1) {
@@ -861,6 +1083,12 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
     @Override
     public void move(Context context, Item item, Collection from, Collection to)
         throws SQLException, AuthorizeException, IOException {
+
+        // If the two collections are the same, do nothing.
+        if (from.equals(to)) {
+            return;
+        }
+
         // Use the normal move method, and default to not inherit permissions
         this.move(context, item, from, to, false);
     }
@@ -882,7 +1110,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         // If we are moving from the owning collection, update that too
         if (isOwningCollection(item, from)) {
             // Update the owning collection
-            log.info(LogManager.getHeader(context, "move_item",
+            log.info(LogHelper.getHeader(context, "move_item",
                                           "item_id=" + item.getID() + ", from " +
                                               "collection_id=" + from.getID() + " to " +
                                               "collection_id=" + to.getID()));
@@ -890,7 +1118,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
 
             // If applicable, update the item policies
             if (inheritDefaultPolicies) {
-                log.info(LogManager.getHeader(context, "move_item",
+                log.info(LogHelper.getHeader(context, "move_item",
                                               "Updating item with inherited policies"));
                 inheritCollectionDefaultPolicies(context, item, to);
             }
@@ -929,7 +1157,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         List<Collection> linkedCollections = item.getCollections();
         List<Collection> notLinkedCollections = new ArrayList<>(allCollections.size() - linkedCollections.size());
 
-        if ((allCollections.size() - linkedCollections.size()) == 0) {
+        if (allCollections.size() - linkedCollections.size() == 0) {
             return notLinkedCollections;
         }
         for (Collection collection : allCollections) {
@@ -961,12 +1189,58 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
         if (item.getOwningCollection() == null) {
             if (!isInProgressSubmission(context, item)) {
                 return true;
-            } else {
-                return false;
             }
+            return false;
         }
 
         return collectionService.canEditBoolean(context, item.getOwningCollection(), false);
+    }
+
+    /**
+     * Finds all Indexed Items where the current user has edit rights. If the user is an Admin,
+     * this is all Indexed Items. Otherwise, it includes those Items where
+     * an indexed "edit" policy lists either the eperson or one of the eperson's groups
+     *
+     * @param context                    DSpace context
+     * @param discoverQuery
+     * @return                           discovery search result objects
+     * @throws SQLException              if something goes wrong
+     * @throws SearchServiceException    if search error
+     */
+    private DiscoverResult retrieveItemsWithEdit(Context context, DiscoverQuery discoverQuery)
+        throws SQLException, SearchServiceException {
+        EPerson currentUser = context.getCurrentUser();
+        if (!authorizeService.isAdmin(context)) {
+            String userId = currentUser != null ? "e" + currentUser.getID().toString() : "e";
+            Stream<String> groupIds = groupService.allMemberGroupsSet(context, currentUser).stream()
+                .map(group -> "g" + group.getID());
+            String query = Stream.concat(Stream.of(userId), groupIds)
+                .collect(Collectors.joining(" OR ", "edit:(", ")"));
+            discoverQuery.addFilterQueries(query);
+        }
+        return searchService.search(context, discoverQuery);
+    }
+
+    @Override
+    public List<Item> findItemsWithEdit(Context context, int offset, int limit)
+        throws SQLException, SearchServiceException {
+        DiscoverQuery discoverQuery = new DiscoverQuery();
+        discoverQuery.setDSpaceObjectFilter(IndexableItem.TYPE);
+        discoverQuery.setStart(offset);
+        discoverQuery.setMaxResults(limit);
+        DiscoverResult resp = retrieveItemsWithEdit(context, discoverQuery);
+        return resp.getIndexableObjects().stream()
+            .map(solrItems -> ((IndexableItem) solrItems).getIndexedObject())
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public int countItemsWithEdit(Context context) throws SQLException, SearchServiceException {
+        DiscoverQuery discoverQuery = new DiscoverQuery();
+        discoverQuery.setMaxResults(0);
+        discoverQuery.setDSpaceObjectFilter(IndexableItem.TYPE);
+        DiscoverResult resp = retrieveItemsWithEdit(context, discoverQuery);
+        return (int) resp.getTotalSearchResults();
     }
 
     /**
@@ -977,6 +1251,7 @@ public class ItemServiceImpl extends DSpaceObjectServiceImpl<Item> implements It
      * @return <code>true</code> if the item is an inprogress submission, i.e. a WorkspaceItem or WorkflowItem
      * @throws SQLException An exception that provides information on a database access error or other errors.
      */
+    @Override
     public boolean isInProgressSubmission(Context context, Item item) throws SQLException {
         return workspaceItemService.findByItem(context, item) != null
             || workflowItemService.findByItem(context, item) != null;
@@ -1000,12 +1275,15 @@ prevent the generation of resource policy entry values with null dspace_object a
      *                            to perform a particular action.
      */
     protected void addDefaultPoliciesNotInPlace(Context context, DSpaceObject dso,
-                                                List<ResourcePolicy> defaultCollectionPolicies)
-        throws SQLException, AuthorizeException {
+        List<ResourcePolicy> defaultCollectionPolicies) throws SQLException, AuthorizeException {
+        boolean appendMode = configurationService
+                .getBooleanProperty("core.authorization.installitem.inheritance-read.append-mode", false);
         for (ResourcePolicy defaultPolicy : defaultCollectionPolicies) {
             if (!authorizeService
                 .isAnIdenticalPolicyAlreadyInPlace(context, dso, defaultPolicy.getGroup(), Constants.READ,
-                                                   defaultPolicy.getID())) {
+                    defaultPolicy.getID()) &&
+                   (!appendMode && isNotAlreadyACustomRPOfThisTypeOnDSO(context, dso) ||
+                    appendMode && shouldBeAppended(context, dso, defaultPolicy))) {
                 ResourcePolicy newPolicy = resourcePolicyService.clone(context, defaultPolicy);
                 newPolicy.setdSpaceObject(dso);
                 newPolicy.setAction(Constants.READ);
@@ -1013,6 +1291,106 @@ prevent the generation of resource policy entry values with null dspace_object a
                 resourcePolicyService.update(context, newPolicy);
             }
         }
+    }
+
+    private void addCustomPoliciesNotInPlace(Context context, DSpaceObject dso, List<ResourcePolicy> customPolicies)
+            throws SQLException, AuthorizeException {
+        boolean customPoliciesAlreadyInPlace = authorizeService
+                .findPoliciesByDSOAndType(context, dso, ResourcePolicy.TYPE_CUSTOM).size() > 0;
+        if (!customPoliciesAlreadyInPlace) {
+            authorizeService.addPolicies(context, customPolicies, dso);
+        }
+    }
+
+    /**
+     * Check whether or not there is already an RP on the given dso, which has actionId={@link Constants.READ} and
+     * resourceTypeId={@link ResourcePolicy.TYPE_CUSTOM}
+     *
+     * @param context DSpace context
+     * @param dso     DSpace object to check for custom read RP
+     * @return True if there is no RP on the item with custom read RP, otherwise false
+     * @throws SQLException If something goes wrong retrieving the RP on the DSO
+     */
+    private boolean isNotAlreadyACustomRPOfThisTypeOnDSO(Context context, DSpaceObject dso) throws SQLException {
+        List<ResourcePolicy> readRPs = resourcePolicyService.find(context, dso, Constants.READ);
+        for (ResourcePolicy readRP : readRPs) {
+            if (readRP.getRpType() != null && readRP.getRpType().equals(ResourcePolicy.TYPE_CUSTOM)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Check if the provided default policy should be appended or not to the final
+     * item. If an item has at least one custom READ policy any anonymous READ
+     * policy with empty start/end date should be skipped
+     *
+     * @param context       DSpace context
+     * @param dso           DSpace object to check for custom read RP
+     * @param defaultPolicy The policy to check
+     * @return
+     * @throws SQLException If something goes wrong retrieving the RP on the DSO
+     */
+    private boolean shouldBeAppended(Context context, DSpaceObject dso, ResourcePolicy defaultPolicy)
+            throws SQLException {
+        boolean hasCustomPolicy = resourcePolicyService.find(context, dso, Constants.READ)
+                                                       .stream()
+                                                       .filter(rp -> (Objects.nonNull(rp.getRpType()) &&
+                                                            Objects.equals(rp.getRpType(), ResourcePolicy.TYPE_CUSTOM)))
+                                                       .findFirst()
+                                                       .isPresent();
+
+        boolean isAnonimousGroup = Objects.nonNull(defaultPolicy.getGroup())
+                && StringUtils.equals(defaultPolicy.getGroup().getName(), Group.ANONYMOUS);
+
+        boolean datesAreNull = Objects.isNull(defaultPolicy.getStartDate())
+                && Objects.isNull(defaultPolicy.getEndDate());
+
+        return !(hasCustomPolicy && isAnonimousGroup && datesAreNull);
+    }
+
+    /**
+     * Returns an iterator of Items possessing the passed metadata field, or only
+     * those matching the passed value, if value is not Item.ANY
+     *
+     * @param context   DSpace context object
+     * @param schema    metadata field schema
+     * @param element   metadata field element
+     * @param qualifier metadata field qualifier
+     * @param value     field value or Item.ANY to match any value
+     * @return an iterator over the items matching that authority value
+     * @throws SQLException       if database error
+     *                            An exception that provides information on a database access error or other errors.
+     * @throws AuthorizeException if authorization error
+     *                            Exception indicating the current user of the context does not have permission
+     *                            to perform a particular action.
+     */
+    @Override
+    public Iterator<Item> findArchivedByMetadataField(Context context,
+                                                      String schema, String element, String qualifier, String value)
+            throws SQLException, AuthorizeException {
+        MetadataSchema mds = metadataSchemaService.find(context, schema);
+        if (mds == null) {
+            throw new IllegalArgumentException("No such metadata schema: " + schema);
+        }
+        MetadataField mdf = metadataFieldService.findByElement(context, mds, element, qualifier);
+        if (mdf == null) {
+            throw new IllegalArgumentException(
+                    "No such metadata field: schema=" + schema + ", element=" + element + ", qualifier=" + qualifier);
+        }
+
+        if (Item.ANY.equals(value)) {
+            return itemDAO.findByMetadataField(context, mdf, null, true);
+        }
+        return itemDAO.findByMetadataField(context, mdf, value, true);
+    }
+
+    @Override
+    public Iterator<Item> findArchivedByMetadataField(Context context, String metadataField, String value)
+            throws SQLException, AuthorizeException {
+        String[] mdValueByField = getMDValueByField(metadataField);
+        return findArchivedByMetadataField(context, mdValueByField[0], mdValueByField[1], mdValueByField[2], value);
     }
 
     /**
@@ -1049,19 +1427,24 @@ prevent the generation of resource policy entry values with null dspace_object a
 
         if (Item.ANY.equals(value)) {
             return itemDAO.findByMetadataField(context, mdf, null, true);
-        } else {
-            return itemDAO.findByMetadataField(context, mdf, value, true);
         }
+        return itemDAO.findByMetadataField(context, mdf, value, true);
     }
 
     @Override
-    public Iterator<Item> findByMetadataQuery(Context context, List<List<MetadataField>> listFieldList,
-                                              List<String> query_op, List<String> query_val, List<UUID> collectionUuids,
-                                              String regexClause, int offset, int limit)
-        throws SQLException, AuthorizeException, IOException {
-        return itemDAO
-            .findByMetadataQuery(context, listFieldList, query_op, query_val, collectionUuids, regexClause, offset,
-                                 limit);
+    public List<Item> findByMetadataQuery(Context context, List<QueryPredicate> queryPredicates,
+            List<UUID> collectionUuids, long offset, int limit)
+            throws SQLException {
+        return itemDAO.findByMetadataQuery(context, queryPredicates, collectionUuids, "text_value ~ ?",
+                offset, limit);
+    }
+
+
+    @Override
+    public long countForMetadataQuery(Context context, List<QueryPredicate> queryPredicates,
+            List<UUID> collectionUuids)
+            throws SQLException {
+        return itemDAO.countForMetadataQuery(context, queryPredicates, collectionUuids, "text_value ~ ?");
     }
 
     @Override
@@ -1100,19 +1483,7 @@ prevent the generation of resource policy entry values with null dspace_object a
                 }
                 break;
             case Constants.DELETE:
-                if (item.getOwningCollection() != null) {
-                    if (AuthorizeConfiguration.canCollectionAdminPerformItemDeletion()) {
-                        adminObject = collection;
-                    } else if (AuthorizeConfiguration.canCommunityAdminPerformItemDeletion()) {
-                        adminObject = community;
-                    }
-                } else {
-                    if (AuthorizeConfiguration.canCollectionAdminManageTemplateItem()) {
-                        adminObject = collection;
-                    } else if (AuthorizeConfiguration.canCommunityAdminManageCollectionTemplateItem()) {
-                        adminObject = community;
-                    }
-                }
+                adminObject = item;
                 break;
             case Constants.WRITE:
                 // if it is a template item we need to check the
@@ -1139,20 +1510,19 @@ prevent the generation of resource policy entry values with null dspace_object a
         Collection ownCollection = item.getOwningCollection();
         if (ownCollection != null) {
             return ownCollection;
-        } else {
-            InProgressSubmission inprogress = ContentServiceFactory.getInstance().getWorkspaceItemService()
-                                                                   .findByItem(context,
-                                                                               item);
-            if (inprogress == null) {
-                inprogress = WorkflowServiceFactory.getInstance().getWorkflowItemService().findByItem(context, item);
-            }
-
-            if (inprogress != null) {
-                return inprogress.getCollection();
-            }
-            // is a template item?
-            return item.getTemplateItemOf();
         }
+        InProgressSubmission inprogress = ContentServiceFactory.getInstance().getWorkspaceItemService()
+                                                               .findByItem(context,
+                                                                           item);
+        if (inprogress == null) {
+            inprogress = WorkflowServiceFactory.getInstance().getWorkflowItemService().findByItem(context, item);
+        }
+
+        if (inprogress != null) {
+            return inprogress.getCollection();
+        }
+        // is a template item?
+        return item.getTemplateItemOf();
     }
 
     @Override
@@ -1249,10 +1619,14 @@ prevent the generation of resource policy entry values with null dspace_object a
 
     @Override
     public Item findByIdOrLegacyId(Context context, String id) throws SQLException {
-        if (StringUtils.isNumeric(id)) {
-            return findByLegacyId(context, Integer.parseInt(id));
-        } else {
+        try {
+            if (StringUtils.isNumeric(id)) {
+                return findByLegacyId(context, Integer.parseInt(id));
+            }
             return find(context, UUID.fromString(id));
+        } catch (IllegalArgumentException e) {
+            // Not a valid legacy ID or valid UUID
+            return null;
         }
     }
 
@@ -1334,42 +1708,33 @@ prevent the generation of resource policy entry values with null dspace_object a
     @Override
     public List<MetadataValue> getMetadata(Item item, String schema, String element, String qualifier, String lang,
                                            boolean enableVirtualMetadata) {
-        //Fields of the relation schema are virtual metadata
-        //except for relation.type which is the type of item in the model
-        if (StringUtils.equals(schema, MetadataSchemaEnum.RELATION.getName()) && !StringUtils.equals(element, "type")) {
-
-            List<RelationshipMetadataValue> relationMetadata = relationshipMetadataService
-                .getRelationshipMetadata(item, false);
-            List<MetadataValue> listToReturn = new LinkedList<>();
-            for (MetadataValue metadataValue : relationMetadata) {
-                if (StringUtils.equals(metadataValue.getMetadataField().getElement(), element)) {
-                    listToReturn.add(metadataValue);
-                }
-            }
-            listToReturn = sortMetadataValueList(listToReturn);
-
-            return listToReturn;
-
-        } else {
-            List<MetadataValue> dbMetadataValues = super.getMetadata(item, schema, element, qualifier, lang);
+        if (!enableVirtualMetadata) {
+            log.debug("Called getMetadata for " + item.getID() + " without enableVirtualMetadata");
+            return super.getMetadata(item, schema, element, qualifier, lang);
+        }
+        if (item.isModifiedMetadataCache()) {
+            log.debug("Called getMetadata for " + item.getID() + " with invalid cache");
+            //rebuild cache
+            List<MetadataValue> dbMetadataValues = item.getMetadata();
 
             List<MetadataValue> fullMetadataValueList = new LinkedList<>();
-            if (enableVirtualMetadata) {
-                fullMetadataValueList.addAll(relationshipMetadataService.getRelationshipMetadata(item, true));
-
-            }
+            fullMetadataValueList.addAll(relationshipMetadataService.getRelationshipMetadata(item, true));
             fullMetadataValueList.addAll(dbMetadataValues);
 
-            List<MetadataValue> finalList = new LinkedList<>();
-            for (MetadataValue metadataValue : fullMetadataValueList) {
-                if (match(schema, element, qualifier, lang, metadataValue)) {
-                    finalList.add(metadataValue);
-                }
-            }
-            finalList = sortMetadataValueList(finalList);
-            return finalList;
+            item.setCachedMetadata(MetadataValueComparators.sort(fullMetadataValueList));
         }
 
+        log.debug("Called getMetadata for " + item.getID() + " based on cache");
+        // Build up list of matching values based on the cache
+        List<MetadataValue> values = new ArrayList<>();
+        for (MetadataValue dcv : item.getCachedMetadata()) {
+            if (match(schema, element, qualifier, lang, dcv)) {
+                values.add(dcv);
+            }
+        }
+
+        // Create an array of matching values
+        return values;
     }
 
     /**
@@ -1398,27 +1763,120 @@ prevent the generation of resource policy entry values with null dspace_object a
         }
     }
 
-    /**
-     * This method will sort the List of MetadataValue objects based on the MetadataSchema, MetadataField Element,
-     * MetadataField Qualifier and MetadataField Place in that order.
-     * @param listToReturn  The list to be sorted
-     * @return The list sorted on those criteria
-     */
-    private List<MetadataValue> sortMetadataValueList(List<MetadataValue> listToReturn) {
-        Comparator<MetadataValue> comparator = Comparator.comparing(
-            metadataValue -> metadataValue.getMetadataField().getMetadataSchema().getName(),
-            Comparator.nullsFirst(Comparator.naturalOrder()));
-        comparator = comparator.thenComparing(metadataValue -> metadataValue.getMetadataField().getElement(),
-                                              Comparator.nullsFirst(Comparator.naturalOrder()));
-        comparator = comparator.thenComparing(metadataValue -> metadataValue.getMetadataField().getQualifier(),
-                                              Comparator.nullsFirst(Comparator.naturalOrder()));
-        comparator = comparator.thenComparing(metadataValue -> metadataValue.getPlace(),
-                                              Comparator.nullsFirst(Comparator.naturalOrder()));
+    @Override
+    public MetadataValue addMetadata(Context context, Item dso, String schema, String element, String qualifier,
+            String lang, String value, String authority, int confidence, int place) throws SQLException {
 
-        Stream<MetadataValue> metadataValueStream = listToReturn.stream().sorted(comparator);
-        listToReturn = metadataValueStream.collect(Collectors.toList());
-        return listToReturn;
+        // We will not verify that they are valid entries in the registry
+        // until update() is called.
+        MetadataField metadataField = metadataFieldService.findByElement(context, schema, element, qualifier);
+        if (metadataField == null) {
+            throw new SQLException(
+                "bad_dublin_core schema=" + schema + "." + element + "." + qualifier + ". Metadata field does not " +
+                "exist!");
+        }
+
+        final Supplier<Integer> placeSupplier =  () -> place;
+
+        return addMetadata(context, dso, metadataField, lang, Arrays.asList(value),
+                Arrays.asList(authority), Arrays.asList(confidence), placeSupplier)
+                .stream().findFirst().orElse(null);
     }
 
+    @Override
+    public String getEntityTypeLabel(Item item) {
+        List<MetadataValue> mdvs = getMetadata(item, "dspace", "entity", "type", Item.ANY, false);
+        if (mdvs.isEmpty()) {
+            return null;
+        }
+
+        if (mdvs.size() > 1) {
+            log.warn(
+                "Item with uuid {}, handle {} has {} entity types ({}), expected 1 entity type",
+                item.getID(), item.getHandle(), mdvs.size(),
+                mdvs.stream().map(MetadataValue::getValue).collect(Collectors.toList())
+            );
+        }
+
+        String entityType = mdvs.get(0).getValue();
+        if (StringUtils.isBlank(entityType)) {
+            return null;
+        }
+
+        return entityType;
+    }
+
+    @Override
+    public EntityType getEntityType(Context context, Item item) throws SQLException {
+        String entityTypeString = getEntityTypeLabel(item);
+        if (StringUtils.isBlank(entityTypeString)) {
+            return null;
+        }
+
+        return entityTypeService.findByEntityType(context, entityTypeString);
+    }
+
+    private void removeOrcidSynchronizationStuff(Context context, Item item) throws SQLException, AuthorizeException {
+
+        if (isNotProfileOrOrcidEntity(item)) {
+            return;
+        }
+
+        context.turnOffAuthorisationSystem();
+
+        try {
+
+            createOrcidQueueRecordsToDeleteOnOrcid(context, item);
+            deleteOrcidHistoryRecords(context, item);
+            deleteOrcidQueueRecords(context, item);
+
+        } finally {
+            context.restoreAuthSystemState();
+        }
+
+    }
+
+    private boolean isNotProfileOrOrcidEntity(Item item) {
+        String entityType = getEntityTypeLabel(item);
+        return !OrcidEntityType.isValidEntityType(entityType)
+            && !researcherProfileService.getProfileType().equals(entityType);
+    }
+
+    private void createOrcidQueueRecordsToDeleteOnOrcid(Context context, Item entity) throws SQLException {
+
+        String entityType = getEntityTypeLabel(entity);
+        if (entityType == null || researcherProfileService.getProfileType().equals(entityType)) {
+            return;
+        }
+
+        Map<Item, String> profileAndPutCodeMap = orcidHistoryService.findLastPutCodes(context, entity);
+        for (Item profile : profileAndPutCodeMap.keySet()) {
+            if (orcidSynchronizationService.isSynchronizationAllowed(profile, entity)) {
+                String putCode = profileAndPutCodeMap.get(profile);
+                String title = getMetadataFirstValue(entity, "dc", "title", null, Item.ANY);
+                orcidQueueService.createEntityDeletionRecord(context, profile, title, entityType, putCode);
+            }
+        }
+
+    }
+
+    private void deleteOrcidHistoryRecords(Context context, Item item) throws SQLException {
+        List<OrcidHistory> historyRecords = orcidHistoryService.findByProfileItemOrEntity(context, item);
+        for (OrcidHistory historyRecord : historyRecords) {
+            if (historyRecord.getProfileItem().equals(item)) {
+                orcidHistoryService.delete(context, historyRecord);
+            } else {
+                historyRecord.setEntity(null);
+                orcidHistoryService.update(context, historyRecord);
+            }
+        }
+    }
+
+    private void deleteOrcidQueueRecords(Context context, Item item) throws SQLException {
+        List<OrcidQueue> orcidQueueRecords = orcidQueueService.findByProfileItemOrEntity(context, item);
+        for (OrcidQueue orcidQueueRecord : orcidQueueRecords) {
+            orcidQueueService.delete(context, orcidQueueRecord);
+        }
+    }
 
 }

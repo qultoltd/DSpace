@@ -7,6 +7,7 @@
  */
 package org.dspace.discovery;
 
+import java.sql.SQLException;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -37,6 +38,8 @@ public class IndexEventConsumer implements Consumer {
 
     // collect Items, Collections, Communities that need indexing
     private Set<IndexableObject> objectsToUpdate = new HashSet<>();
+    // collect freshly created Items that need indexing (requires pre-db status)
+    private Set<IndexableObject> createdItemsToUpdate = new HashSet<>();
 
     // unique search IDs to delete
     private Set<String> uniqueIdsToDelete = new HashSet<>();
@@ -65,21 +68,27 @@ public class IndexEventConsumer implements Consumer {
         if (objectsToUpdate == null) {
             objectsToUpdate = new HashSet<>();
             uniqueIdsToDelete = new HashSet<>();
+            createdItemsToUpdate = new HashSet<>();
         }
 
         int st = event.getSubjectType();
         if (!(st == Constants.ITEM || st == Constants.BUNDLE
-            || st == Constants.COLLECTION || st == Constants.COMMUNITY || st == Constants.SITE)) {
+            || st == Constants.COLLECTION || st == Constants.COMMUNITY || st == Constants.SITE
+            || st == Constants.LDN_MESSAGE)) {
             log
                 .warn("IndexConsumer should not have been given this kind of Subject in an event, skipping: "
                           + event.toString());
             return;
         }
 
-        DSpaceObject subject = event.getSubject(ctx);
-
-        DSpaceObject object = event.getObject(ctx);
-
+        DSpaceObject subject = null;
+        DSpaceObject object = null;
+        try {
+            subject = event.getSubject(ctx);
+            object = event.getObject(ctx);
+        } catch (Exception e) {
+            log.warn("Could not find the related DSpace Object for event subject: " + st);
+        }
 
         // If event subject is a Bundle and event was Add or Remove,
         // transform the event to be a Modify on the owning Item.
@@ -106,7 +115,7 @@ public class IndexEventConsumer implements Consumer {
             case Event.MODIFY:
             case Event.MODIFY_METADATA:
                 if (subject == null) {
-                    if (st == Constants.SITE) {
+                    if (st == Constants.SITE || st == Constants.LDN_MESSAGE) {
                         // Update the indexable objects of type in event.detail of objects with ids in event.identifiers
                         for (String id : event.getIdentifiers()) {
                             IndexFactory indexableObjectService = IndexObjectFactoryFactory.getInstance().
@@ -130,13 +139,31 @@ public class IndexEventConsumer implements Consumer {
                     }
                 } else {
                     log.debug("consume() adding event to update queue: " + event.toString());
+                    if (event.getSubjectType() == Constants.ITEM) {
+                    // if it is an item we cannot know about its previous state, so it could be a
+                    // workspaceitem that has been deposited right now or an approved/reject
+                    // workflowitem.
+                    // As the workflow is not necessary enabled it can happen than a workspaceitem
+                    // became directly an item without giving us the chance to retrieve a
+                    // workflowitem... so we need to force the unindex of all the related data
+                    // before to index it again to be sure to don't leave any zombie in solr
+                        IndexFactory indexableObjectService = IndexObjectFactoryFactory.getInstance()
+                                              .getIndexFactoryByType(Constants.typeText[event.getSubjectType()]);
+                        String detail = indexableObjectService.getType() + "-" + event.getSubjectID().toString();
+                        uniqueIdsToDelete.add(detail);
+                    }
+
                     objectsToUpdate.addAll(indexObjectServiceFactory.getIndexableObjects(ctx, subject));
                 }
                 break;
 
             case Event.REMOVE:
             case Event.ADD:
-                if (object == null) {
+                // At this time, ADD and REMOVE actions are ignored on SITE object. They are only triggered for
+                // top-level communities. No action is necessary as Community itself is indexed (or deleted) separately.
+                if (event.getSubjectType() == Constants.SITE) {
+                    log.debug(event.getEventTypeAsString() + " event triggered for Site object. Skipping it.");
+                } else if (object == null) {
                     log.warn(event.getEventTypeAsString() + " event, could not get object for "
                                  + event.getObjectTypeAsString() + " id="
                                  + event.getObjectID()
@@ -144,6 +171,13 @@ public class IndexEventConsumer implements Consumer {
                 } else {
                     log.debug("consume() adding event to update queue: " + event.toString());
                     objectsToUpdate.addAll(indexObjectServiceFactory.getIndexableObjects(ctx, subject));
+
+                    // If the event subject is a Collection and the event object is an Item,
+                    // also update the object in order to index mapped/unmapped Items
+                    if (subject != null &&
+                        subject.getType() == Constants.COLLECTION && object.getType() == Constants.ITEM) {
+                        createdItemsToUpdate.addAll(indexObjectServiceFactory.getIndexableObjects(ctx, object));
+                    }
                 }
                 break;
 
@@ -151,7 +185,9 @@ public class IndexEventConsumer implements Consumer {
                 if (event.getSubjectType() == -1 || event.getSubjectID() == null) {
                     log.warn("got null subject type and/or ID on DELETE event, skipping it.");
                 } else {
-                    String detail = event.getSubjectType() + "-" + event.getSubjectID().toString();
+                    IndexFactory indexableObjectService = IndexObjectFactoryFactory.getInstance()
+                                          .getIndexFactoryByType(Constants.typeText[event.getSubjectType()]);
+                    String detail = indexableObjectService.getType() + "-" + event.getSubjectID().toString();
                     log.debug("consume() adding event to delete queue: " + event.toString());
                     uniqueIdsToDelete.add(detail);
                 }
@@ -174,28 +210,11 @@ public class IndexEventConsumer implements Consumer {
     @Override
     public void end(Context ctx) throws Exception {
 
-        try {
-            // update the changed Items not deleted because they were on create list
-            for (IndexableObject iu : objectsToUpdate) {
-                /* we let all types through here and
-                 * allow the search indexer to make
-                 * decisions on indexing and/or removal
-                 */
-                iu.setIndexedObject(ctx.reloadEntity(iu.getIndexedObject()));
-                String uniqueIndexID = iu.getUniqueIndexID();
-                if (uniqueIndexID != null && !uniqueIdsToDelete.contains(uniqueIndexID)) {
-                    try {
-                        indexer.indexContent(ctx, iu, true, false);
-                        log.debug("Indexed "
-                                + iu.getTypeText()
-                                + ", id=" + iu.getID()
-                                + ", unique_id=" + uniqueIndexID);
-                    } catch (Exception e) {
-                        log.error("Failed while indexing object: ", e);
-                    }
-                }
-            }
+        // Change the mode to readonly to improve performance
+        Context.Mode originalMode = ctx.getCurrentMode();
+        ctx.setMode(Context.Mode.READ_ONLY);
 
+        try {
             for (String uid : uniqueIdsToDelete) {
                 try {
                     indexer.unIndexContent(ctx, uid, false);
@@ -206,6 +225,14 @@ public class IndexEventConsumer implements Consumer {
                     log.error("Failed while UN-indexing object: " + uid, e);
                 }
             }
+            // update the changed Items not deleted because they were on create list
+            for (IndexableObject iu : objectsToUpdate) {
+                indexObject(ctx, iu, false);
+            }
+            // update the created Items with a pre-db status
+            for (IndexableObject iu : createdItemsToUpdate) {
+                indexObject(ctx, iu, true);
+            }
         } finally {
             if (!objectsToUpdate.isEmpty() || !uniqueIdsToDelete.isEmpty()) {
 
@@ -214,6 +241,29 @@ public class IndexEventConsumer implements Consumer {
                 // "free" the resources
                 objectsToUpdate.clear();
                 uniqueIdsToDelete.clear();
+                createdItemsToUpdate.clear();
+            }
+
+            ctx.setMode(originalMode);
+        }
+    }
+
+    private void indexObject(Context ctx, IndexableObject iu, boolean preDb) throws SQLException {
+        /* we let all types through here and
+         * allow the search indexer to make
+         * decisions on indexing and/or removal
+         */
+        iu.setIndexedObject(ctx.reloadEntity(iu.getIndexedObject()));
+        String uniqueIndexID = iu.getUniqueIndexID();
+        if (uniqueIndexID != null) {
+            try {
+                indexer.indexContent(ctx, iu, true, false, preDb);
+                log.debug("Indexed "
+                        + iu.getTypeText()
+                        + ", id=" + iu.getID()
+                        + ", unique_id=" + uniqueIndexID);
+            } catch (Exception e) {
+                log.error("Failed while indexing object: ", e);
             }
         }
     }

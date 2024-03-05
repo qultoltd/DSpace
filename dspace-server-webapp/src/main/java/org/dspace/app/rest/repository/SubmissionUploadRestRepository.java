@@ -7,10 +7,10 @@
  */
 package org.dspace.app.rest.repository;
 
-import java.sql.SQLException;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
@@ -18,13 +18,12 @@ import org.apache.logging.log4j.Logger;
 import org.dspace.app.rest.model.AccessConditionOptionRest;
 import org.dspace.app.rest.model.SubmissionUploadRest;
 import org.dspace.app.rest.projection.Projection;
-import org.dspace.app.rest.utils.DateMathParser;
 import org.dspace.core.Context;
-import org.dspace.eperson.Group;
-import org.dspace.eperson.service.GroupService;
 import org.dspace.submit.model.AccessConditionOption;
 import org.dspace.submit.model.UploadConfiguration;
 import org.dspace.submit.model.UploadConfigurationService;
+import org.dspace.util.DateMathParser;
+import org.dspace.util.TimeHelpers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -37,7 +36,7 @@ import org.springframework.stereotype.Component;
  *
  * @author Luigi Andrea Pascarelli (luigiandrea.pascarelli at 4science.it)
  */
-@Component(SubmissionUploadRest.CATEGORY + "." + SubmissionUploadRest.NAME)
+@Component(SubmissionUploadRest.CATEGORY + "." + SubmissionUploadRest.PLURAL_NAME)
 public class SubmissionUploadRestRepository extends DSpaceRestRepository<SubmissionUploadRest, String> {
 
     private static final Logger log = org.apache.logging.log4j.LogManager
@@ -48,11 +47,6 @@ public class SubmissionUploadRestRepository extends DSpaceRestRepository<Submiss
 
     @Autowired
     private UploadConfigurationService uploadConfigurationService;
-
-    @Autowired
-    GroupService groupService;
-
-    DateMathParser dateMathParser = new DateMathParser();
 
     @PreAuthorize("hasAuthority('AUTHENTICATED')")
     @Override
@@ -72,7 +66,7 @@ public class SubmissionUploadRestRepository extends DSpaceRestRepository<Submiss
         Collection<UploadConfiguration> uploadConfigs = uploadConfigurationService.getMap().values();
         Projection projection = utils.obtainProjection();
         List<SubmissionUploadRest> results = new ArrayList<>();
-        List<String> configNames = new ArrayList<String>();
+        List<String> configNames = new ArrayList<>();
         for (UploadConfiguration uploadConfig : uploadConfigs) {
             if (!configNames.contains(uploadConfig.getName())) {
                 configNames.add(uploadConfig.getName());
@@ -94,37 +88,15 @@ public class SubmissionUploadRestRepository extends DSpaceRestRepository<Submiss
     private SubmissionUploadRest convert(Context context, UploadConfiguration config, Projection projection) {
         SubmissionUploadRest result = new SubmissionUploadRest();
         result.setProjection(projection);
+        DateMathParser dateMathParser = new DateMathParser();
         for (AccessConditionOption option : config.getOptions()) {
             AccessConditionOptionRest optionRest = new AccessConditionOptionRest();
-            if (option.getGroupName() != null) {
-                Group group;
-                try {
-                    group = groupService.findByName(context, option.getGroupName());
-                } catch (SQLException e) {
-                    throw new IllegalStateException("Wrong group name configuration for the access condition "
-                            + "option named " + option.getName());
-                }
-                if (group != null) {
-                    optionRest.setGroupUUID(group.getID());
-                }
-            }
-            if (option.getSelectGroupName() != null) {
-                Group group;
-                try {
-                    group = groupService.findByName(context, option.getSelectGroupName());
-                } catch (SQLException e) {
-                    throw new IllegalStateException("Wrong select group name configuration for the access condition "
-                            + "option named " + option.getName());
-                }
-                if (group != null) {
-                    optionRest.setSelectGroupUUID(group.getID());
-                }
-            }
             optionRest.setHasStartDate(option.getHasStartDate());
             optionRest.setHasEndDate(option.getHasEndDate());
             if (StringUtils.isNotBlank(option.getStartDateLimit())) {
                 try {
-                    optionRest.setMaxStartDate(dateMathParser.parseMath(option.getStartDateLimit()));
+                    Date requested = dateMathParser.parseMath(option.getStartDateLimit());
+                    optionRest.setMaxStartDate(TimeHelpers.toMidnightUTC(requested));
                 } catch (ParseException e) {
                     throw new IllegalStateException("Wrong start date limit configuration for the access condition "
                             + "option named  " + option.getName());
@@ -132,7 +104,8 @@ public class SubmissionUploadRestRepository extends DSpaceRestRepository<Submiss
             }
             if (StringUtils.isNotBlank(option.getEndDateLimit())) {
                 try {
-                    optionRest.setMaxEndDate(dateMathParser.parseMath(option.getEndDateLimit()));
+                    Date requested = dateMathParser.parseMath(option.getEndDateLimit());
+                    optionRest.setMaxEndDate(TimeHelpers.toMidnightUTC(requested));
                 } catch (ParseException e) {
                     throw new IllegalStateException("Wrong end date limit configuration for the access condition "
                             + "option named  " + option.getName());

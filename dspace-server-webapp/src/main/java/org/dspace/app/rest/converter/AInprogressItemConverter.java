@@ -16,16 +16,19 @@ import org.dspace.app.rest.model.ErrorRest;
 import org.dspace.app.rest.model.SubmissionDefinitionRest;
 import org.dspace.app.rest.model.SubmissionSectionRest;
 import org.dspace.app.rest.projection.Projection;
-import org.dspace.app.rest.submit.AbstractRestProcessingStep;
+import org.dspace.app.rest.submit.DataProcessingStep;
+import org.dspace.app.rest.submit.RestProcessingStep;
 import org.dspace.app.rest.submit.SubmissionService;
-import org.dspace.app.util.SubmissionConfigReader;
 import org.dspace.app.util.SubmissionConfigReaderException;
 import org.dspace.app.util.SubmissionStepConfig;
 import org.dspace.content.Collection;
 import org.dspace.content.InProgressSubmission;
 import org.dspace.content.Item;
 import org.dspace.eperson.EPerson;
+import org.dspace.submit.factory.SubmissionServiceFactory;
+import org.dspace.submit.service.SubmissionConfigService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 
 /**
  * Abstract implementation providing the common functionalities for all the inprogressSubmission Converter
@@ -43,19 +46,21 @@ public abstract class AInprogressItemConverter<T extends InProgressSubmission,
 
     private static final Logger log = org.apache.logging.log4j.LogManager.getLogger(AInprogressItemConverter.class);
 
+    // Must be loaded @Lazy, as ConverterService autowires all DSpaceConverter components
+    @Lazy
     @Autowired
     private ConverterService converter;
 
     @Autowired
     private SubmissionSectionConverter submissionSectionConverter;
 
-    protected SubmissionConfigReader submissionConfigReader;
+    protected SubmissionConfigService submissionConfigService;
 
     @Autowired
     SubmissionService submissionService;
 
     public AInprogressItemConverter() throws SubmissionConfigReaderException {
-        submissionConfigReader = new SubmissionConfigReader();
+        submissionConfigService = SubmissionServiceFactory.getInstance().getSubmissionConfigService();
     }
 
     protected void fillFromModel(T obj, R witem, Projection projection) {
@@ -67,7 +72,9 @@ public abstract class AInprogressItemConverter<T extends InProgressSubmission,
         witem.setId(obj.getID());
         witem.setCollection(collection != null ? converter.toRest(collection, projection) : null);
         witem.setItem(converter.toRest(item, projection));
-        witem.setSubmitter(converter.toRest(submitter, projection));
+        if (submitter != null) {
+            witem.setSubmitter(converter.toRest(submitter, projection));
+        }
 
         // 1. retrieve the submission definition
         // 2. iterate over the submission section to allow to plugin additional
@@ -75,10 +82,14 @@ public abstract class AInprogressItemConverter<T extends InProgressSubmission,
 
         if (collection != null) {
             SubmissionDefinitionRest def = converter.toRest(
-                    submissionConfigReader.getSubmissionConfigByCollection(collection.getHandle()), projection);
+                    submissionConfigService.getSubmissionConfigByCollection(collection), projection);
             witem.setSubmissionDefinition(def);
             for (SubmissionSectionRest sections : def.getPanels()) {
                 SubmissionStepConfig stepConfig = submissionSectionConverter.toModel(sections);
+
+                if (stepConfig.isHiddenForInProgressSubmission(obj)) {
+                    continue;
+                }
 
                 /*
                  * First, load the step processing class (using the current
@@ -91,18 +102,18 @@ public abstract class AInprogressItemConverter<T extends InProgressSubmission,
 
                     Object stepInstance = stepClass.newInstance();
 
-                    if (stepInstance instanceof AbstractRestProcessingStep) {
+                    if (stepInstance instanceof DataProcessingStep) {
                         // load the interface for this step
-                        AbstractRestProcessingStep stepProcessing =
-                            (AbstractRestProcessingStep) stepClass.newInstance();
+                        DataProcessingStep stepProcessing =
+                            (DataProcessingStep) stepClass.newInstance();
                         for (ErrorRest error : stepProcessing.validate(submissionService, obj, stepConfig)) {
                             addError(witem.getErrors(), error);
                         }
                         witem.getSections()
                             .put(sections.getId(), stepProcessing.getData(submissionService, obj, stepConfig));
-                    } else {
+                    } else if (!(stepInstance instanceof RestProcessingStep)) {
                         log.warn("The submission step class specified by '" + stepConfig.getProcessingClassName() +
-                                 "' does not extend the class org.dspace.app.rest.submit.AbstractRestProcessingStep!" +
+                                 "' does not implement the interface org.dspace.app.rest.submit.RestProcessingStep!" +
                                  " Therefore it cannot be used by the Configurable Submission as the " +
                                  "<processing-class>!");
                     }

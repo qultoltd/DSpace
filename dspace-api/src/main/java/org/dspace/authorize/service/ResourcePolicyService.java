@@ -39,16 +39,33 @@ public interface ResourcePolicyService extends DSpaceCRUDService<ResourcePolicy>
 
     public List<ResourcePolicy> find(Context context, Group group) throws SQLException;
 
+    /**
+     * Retrieve a list of ResourcePolicies by EPerson
+     *
+     * @param c         context
+     * @param ePerson   the EPerson for which to look up the resource policies
+     * @return a list of ResourcePolicies for the provided EPerson
+     * @throws SQLException if there's a database problem
+     */
+    public List<ResourcePolicy> find(Context c, EPerson ePerson) throws SQLException;
+
     public List<ResourcePolicy> find(Context c, EPerson e, List<Group> groups, int action, int type_id)
         throws SQLException;
 
     /**
-     * Look for ResourcePolicies by DSpaceObject, Group, and action, ignoring IDs with a specific PolicyID.
-     * This method can be used to detect duplicate ResourcePolicies.
+     * Look for ResourcePolicies by DSpaceObject, Group, and action, ignoring
+     * IDs with a specific PolicyID. This method can be used to detect duplicate
+     * ResourcePolicies.
      *
-     * @param notPolicyID ResourcePolicies with this ID will be ignored while looking out for equal ResourcePolicies.
-     * @return List of resource policies for the same DSpaceObject, group and action but other policyID.
-     * @throws SQLException
+     * @param context current DSpace session.
+     * @param dso find policies for this object.
+     * @param group find policies referring to this group.
+     * @param action find policies for this action.
+     * @param notPolicyID ResourcePolicies with this ID will be ignored while
+     *                    looking out for equal ResourcePolicies.
+     * @return List of resource policies for the same DSpaceObject, group and
+     *         action but other policyID.
+     * @throws SQLException passed through.
      */
     public List<ResourcePolicy> findByTypeGroupActionExceptId(Context context, DSpaceObject dso, Group group,
                                                               int action, int notPolicyID)
@@ -58,6 +75,16 @@ public interface ResourcePolicyService extends DSpaceCRUDService<ResourcePolicy>
 
     public boolean isDateValid(ResourcePolicy resourcePolicy);
 
+    /**
+     * Create and persist a copy of a given ResourcePolicy, with an empty
+     * dSpaceObject field.
+     *
+     * @param context current DSpace session.
+     * @param resourcePolicy the policy to be copied.
+     * @return the copy.
+     * @throws SQLException passed through.
+     * @throws AuthorizeException passed through.
+     */
     public ResourcePolicy clone(Context context, ResourcePolicy resourcePolicy) throws SQLException, AuthorizeException;
 
     public void removeAllPolicies(Context c, DSpaceObject o) throws SQLException, AuthorizeException;
@@ -66,11 +93,24 @@ public interface ResourcePolicyService extends DSpaceCRUDService<ResourcePolicy>
 
     public void removePolicies(Context c, DSpaceObject o, String type) throws SQLException, AuthorizeException;
 
+    public void removePolicies(Context c, DSpaceObject o, String type, int action)
+        throws SQLException, AuthorizeException;
+
     public void removeDsoGroupPolicies(Context context, DSpaceObject dso, Group group)
         throws SQLException, AuthorizeException;
 
     public void removeDsoEPersonPolicies(Context context, DSpaceObject dso, EPerson ePerson)
         throws SQLException, AuthorizeException;
+
+    /**
+     *  Removes all ResourcePolicies related to an EPerson
+     *
+     * @param context   context
+     * @param ePerson   the EPerson for which the ResourcePolicies will be deleted
+     * @throws SQLException if there's a database problem
+     * @throws AuthorizeException when the current user is not authorized
+     */
+    public void removeAllEPersonPolicies(Context context, EPerson ePerson) throws SQLException, AuthorizeException;
 
     public void removeGroupPolicies(Context c, Group group) throws SQLException;
 
@@ -97,6 +137,7 @@ public interface ResourcePolicyService extends DSpaceCRUDService<ResourcePolicy>
      * @param ePerson       ePerson whose policies want to find
      * @param offset        the position of the first result to return
      * @param limit         paging limit
+     * @return some of the policies referring to {@code ePerson}.
      * @throws SQLException if database error
      */
     public List<ResourcePolicy> findByEPerson(Context context, EPerson ePerson, int offset, int limit)

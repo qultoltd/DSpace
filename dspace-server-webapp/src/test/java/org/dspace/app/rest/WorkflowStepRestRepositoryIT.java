@@ -31,7 +31,7 @@ public class WorkflowStepRestRepositoryIT extends AbstractControllerIntegrationT
     private XmlWorkflowFactory xmlWorkflowFactory = XmlWorkflowServiceFactory.getInstance().getWorkflowFactory();
 
     private static final String WORKFLOW_ACTIONS_ENDPOINT
-        = "/api/" + WorkflowStepRest.CATEGORY + "/" + WorkflowStepRest.NAME_PLURAL;
+        = "/api/" + WorkflowStepRest.CATEGORY + "/" + WorkflowStepRest.PLURAL_NAME;
 
     @Test
     public void getAllWorkflowSteps_NonImplementedEndpoint() throws Exception {
@@ -47,8 +47,8 @@ public class WorkflowStepRestRepositoryIT extends AbstractControllerIntegrationT
         String token = "NonValidToken";
         //When we call this facets endpoint
         getClient(token).perform(get(WORKFLOW_ACTIONS_ENDPOINT))
-            //We expect a 403 Forbidden status
-            .andExpect(status().isForbidden());
+            //We expect a 401 Unauthorized status
+            .andExpect(status().isUnauthorized());
     }
 
     @Test

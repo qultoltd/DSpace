@@ -24,6 +24,7 @@ import org.dspace.app.rest.RestResourceController;
 public class ResourcePolicyRest extends BaseObjectRest<Integer> {
 
     public static final String NAME = "resourcepolicy";
+    public static final String PLURAL_NAME = "resourcepolicies";
     public static final String CATEGORY = RestAddressableModel.AUTHORIZATION;
 
     private String name;
@@ -60,6 +61,11 @@ public class ResourcePolicyRest extends BaseObjectRest<Integer> {
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     public String getType() {
         return NAME;
+    }
+
+    @Override
+    public String getTypePlural() {
+        return PLURAL_NAME;
     }
 
     @Override

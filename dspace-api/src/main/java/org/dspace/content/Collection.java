@@ -7,11 +7,15 @@
  */
 package org.dspace.content;
 
+import static org.dspace.content.service.DSpaceObjectService.MD_LICENSE;
+
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
+import javax.annotation.Nonnull;
 import javax.persistence.Cacheable;
 import javax.persistence.CascadeType;
 import javax.persistence.Column;
@@ -25,6 +29,7 @@ import javax.persistence.Table;
 import javax.persistence.Transient;
 
 import org.dspace.authorize.AuthorizeException;
+import org.dspace.browse.ItemCountException;
 import org.dspace.content.comparator.NameAscendingComparator;
 import org.dspace.content.factory.ContentServiceFactory;
 import org.dspace.content.service.CollectionService;
@@ -46,7 +51,6 @@ import org.hibernate.proxy.HibernateProxyHelper;
  * effect.
  *
  * @author Robert Tansley
- * @version $Revision$
  */
 @Entity
 @Table(name = "collection")
@@ -87,22 +91,10 @@ public class Collection extends DSpaceObject implements DSpaceObjectLegacySuppor
         joinColumns = {@JoinColumn(name = "collection_id")},
         inverseJoinColumns = {@JoinColumn(name = "community_id")}
     )
-    private Set<Community> communities = new HashSet<>();
+    private final Set<Community> communities = new HashSet<>();
 
     @Transient
     private transient CollectionService collectionService;
-
-    // Keys for accessing Collection metadata
-    @Transient
-    public static final String COPYRIGHT_TEXT = "copyright_text";
-    @Transient
-    public static final String INTRODUCTORY_TEXT = "introductory_text";
-    @Transient
-    public static final String SHORT_DESCRIPTION = "short_description";
-    @Transient
-    public static final String SIDEBAR_TEXT = "side_bar_text";
-    @Transient
-    public static final String PROVENANCE_TEXT = "provenance_description";
 
     /**
      * Protected constructor, create object using:
@@ -112,6 +104,16 @@ public class Collection extends DSpaceObject implements DSpaceObjectLegacySuppor
      */
     protected Collection() {
 
+    }
+
+    /**
+     * Takes a pre-determined UUID to be passed to the object to allow for the
+     * restoration of previously defined UUID's.
+     *
+     * @param uuid Takes a uuid to be passed to the Pre-Defined UUID Generator
+     */
+    protected Collection(UUID uuid) {
+        this.predefinedUUID = uuid;
     }
 
     @Override
@@ -133,6 +135,9 @@ public class Collection extends DSpaceObject implements DSpaceObjectLegacySuppor
 
     protected void setLogo(Bitstream logo) {
         this.logo = logo;
+        if (logo != null) {
+            logo.setCollection(this);
+        }
         setModified();
     }
 
@@ -207,10 +212,17 @@ public class Collection extends DSpaceObject implements DSpaceObjectLegacySuppor
      * Get the license that users must grant before submitting to this
      * collection.
      *
-     * @return the license for this collection
+     * @return the license for this collection. Never null.
      */
+    @Nonnull
     public String getLicenseCollection() {
-        return getCollectionService().getMetadata(this, "license");
+        String license = getCollectionService()
+                .getMetadataFirstValue(this, CollectionService.MD_LICENSE, Item.ANY);
+        if (null == license) {
+            return "";
+        } else {
+            return license;
+        }
     }
 
     /**
@@ -222,7 +234,7 @@ public class Collection extends DSpaceObject implements DSpaceObjectLegacySuppor
      * @throws SQLException if database error
      */
     public void setLicense(Context context, String license) throws SQLException {
-        getCollectionService().setMetadata(context, this, "license", license);
+        getCollectionService().setMetadataSingleValue(context, this, MD_LICENSE, Item.ANY, license);
     }
 
     /**
@@ -326,6 +338,19 @@ public class Collection extends DSpaceObject implements DSpaceObjectLegacySuppor
             collectionService = ContentServiceFactory.getInstance().getCollectionService();
         }
         return collectionService;
+    }
+
+    /**
+     * return count of the collection items
+     *
+     * @return int
+     */
+    public int countArchivedItems() {
+        try {
+            return collectionService.countArchivedItems(this);
+        } catch (ItemCountException e) {
+            throw new RuntimeException(e);
+        }
     }
 
 }

@@ -29,7 +29,6 @@ import org.dspace.content.DSpaceObject;
 import org.dspace.content.factory.ContentServiceFactory;
 import org.dspace.core.Context;
 import org.dspace.core.factory.CoreServiceFactory;
-import org.dspace.curate.factory.CurateServiceFactory;
 import org.dspace.eperson.EPerson;
 import org.dspace.eperson.factory.EPersonServiceFactory;
 import org.dspace.eperson.service.EPersonService;
@@ -153,21 +152,10 @@ public class Curation extends DSpaceRunnable<CurationScriptConfiguration> {
                 super.handler.logInfo("Curating id: " + entry.getObjectId());
             }
             curator.clear();
-            // does entry relate to a DSO or workflow object?
-            if (entry.getObjectId().indexOf('/') > 0) {
-                for (String taskName : entry.getTaskNames()) {
-                    curator.addTask(taskName);
-                }
-                curator.curate(context, entry.getObjectId());
-            } else {
-                // make eperson who queued task the effective user
-                EPerson agent = ePersonService.findByEmail(context, entry.getEpersonId());
-                if (agent != null) {
-                    context.setCurrentUser(agent);
-                }
-                CurateServiceFactory.getInstance().getWorkflowCuratorService()
-                                    .curate(curator, context, entry.getObjectId());
+            for (String taskName : entry.getTaskNames()) {
+                curator.addTask(taskName);
             }
+            curator.curate(context, entry.getObjectId());
         }
         queue.release(this.queue, ticket, true);
         return ticket;
@@ -194,7 +182,7 @@ public class Curation extends DSpaceRunnable<CurationScriptConfiguration> {
      * @throws FileNotFoundException If file of command line variable -r reporter is not found
      */
     private Curator initCurator() throws FileNotFoundException {
-        Curator curator = new Curator();
+        Curator curator = new Curator(handler);
         OutputStream reporterStream;
         if (null == this.reporter) {
             reporterStream = new NullOutputStream();
@@ -264,9 +252,16 @@ public class Curation extends DSpaceRunnable<CurationScriptConfiguration> {
                 super.handler.logError("EPerson not found: " + currentUserUuid);
                 throw new IllegalArgumentException("Unable to find a user with uuid: " + currentUserUuid);
             }
+            assignSpecialGroupsInContext();
             this.context.setCurrentUser(eperson);
         } catch (SQLException e) {
             handler.handleException("Something went wrong trying to fetch eperson for uuid: " + currentUserUuid, e);
+        }
+    }
+
+    protected void assignSpecialGroupsInContext() throws SQLException {
+        for (UUID uuid : handler.getSpecialGroups()) {
+            context.setSpecialGroup(uuid);
         }
     }
 

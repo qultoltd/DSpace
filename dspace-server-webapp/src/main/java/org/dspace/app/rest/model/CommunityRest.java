@@ -58,4 +58,19 @@ public class CommunityRest extends DSpaceObjectRest {
     public String getType() {
         return NAME;
     }
+
+    @Override
+    public String getTypePlural() {
+        return PLURAL_NAME;
+    }
+
+    private int archivedItemsCount;
+
+    public int getArchivedItemsCount() {
+        return archivedItemsCount;
+    }
+
+    public void setArchivedItemsCount(int archivedItemsCount) {
+        this.archivedItemsCount = archivedItemsCount;
+    }
 }

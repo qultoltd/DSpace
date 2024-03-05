@@ -12,7 +12,6 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
-import org.atteo.evo.inflector.English;
 import org.dspace.app.rest.DiscoverableEndpointsService;
 import org.dspace.app.rest.Parameter;
 import org.dspace.app.rest.SearchRestMethod;
@@ -41,7 +40,7 @@ import org.springframework.stereotype.Component;
  *
  * @author Andrea Bollini (andrea.bollini at 4science.it)
  */
-@Component(VocabularyRest.CATEGORY + "." + VocabularyEntryDetailsRest.NAME)
+@Component(VocabularyRest.CATEGORY + "." + VocabularyEntryDetailsRest.PLURAL_NAME)
 public class VocabularyEntryDetailsRestRepository extends DSpaceRestRepository<VocabularyEntryDetailsRest, String>
         implements InitializingBean {
 
@@ -56,10 +55,9 @@ public class VocabularyEntryDetailsRestRepository extends DSpaceRestRepository<V
 
     @Override
     public void afterPropertiesSet() throws Exception {
-        String models = English.plural(VocabularyEntryDetailsRest.NAME);
         discoverableEndpointsService.register(this, Arrays.asList(
-                new Link("/api/" + VocabularyRest.CATEGORY + "/" + models + "/search",
-                        models + "-search")));
+                Link.of("/api/" + VocabularyRest.CATEGORY + "/" + VocabularyEntryDetailsRest.PLURAL_NAME + "/search",
+                        VocabularyEntryDetailsRest.PLURAL_NAME + "-search")));
     }
 
     @PreAuthorize("hasAuthority('AUTHENTICATED')")
@@ -68,7 +66,7 @@ public class VocabularyEntryDetailsRestRepository extends DSpaceRestRepository<V
         throw new RepositoryMethodNotImplementedException(ResourcePolicyRest.NAME, "findAll");
     }
 
-    @PreAuthorize("hasAuthority('AUTHENTICATED')")
+    @PreAuthorize("permitAll()")
     @Override
     public VocabularyEntryDetailsRest findOne(Context context, String name) {
         String[] parts = StringUtils.split(name, ":", 2);
@@ -84,7 +82,7 @@ public class VocabularyEntryDetailsRestRepository extends DSpaceRestRepository<V
     }
 
     @SearchRestMethod(name = "top")
-    @PreAuthorize("hasAuthority('AUTHENTICATED')")
+    @PreAuthorize("permitAll()")
     public Page<VocabularyEntryDetailsRest> findAllTop(@Parameter(value = "vocabulary", required = true)
            String vocabularyId, Pageable pageable) {
         Context context = obtainContext();

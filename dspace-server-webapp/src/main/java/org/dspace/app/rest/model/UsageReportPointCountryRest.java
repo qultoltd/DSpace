@@ -7,16 +7,19 @@
  */
 package org.dspace.app.rest.model;
 
+import java.util.Locale;
+
 import org.dspace.statistics.util.LocationUtils;
 
 /**
- * This class serves as a REST representation of a Country data Point of a {@link UsageReportRest} from the DSpace
- * statistics
+ * This class serves as a REST representation of a Country data Point of a
+ * {@link UsageReportRest} from the DSpace statistics.
  *
  * @author Maria Verdonck (Atmire) on 08/06/2020
  */
 public class UsageReportPointCountryRest extends UsageReportPointRest {
     public static final String NAME = "country";
+    public static final String PLURAL_NAME = "countries";
 
     @Override
     public void setLabel(String label) {
@@ -27,11 +30,16 @@ public class UsageReportPointCountryRest extends UsageReportPointRest {
     @Override
     public void setId(String id) {
         super.id = id;
-        super.label = LocationUtils.getCountryName(id);
+        super.label = LocationUtils.getCountryName(id, Locale.getDefault());
     }
 
     @Override
     public String getType() {
         return NAME;
+    }
+
+    @Override
+    public String getTypePlural() {
+        return PLURAL_NAME;
     }
 }

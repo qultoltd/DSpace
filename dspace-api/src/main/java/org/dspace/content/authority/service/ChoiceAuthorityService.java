@@ -10,11 +10,13 @@ package org.dspace.content.authority.service;
 import java.util.List;
 import java.util.Set;
 
+import org.dspace.app.util.SubmissionConfigReaderException;
 import org.dspace.content.Collection;
 import org.dspace.content.MetadataValue;
 import org.dspace.content.authority.Choice;
 import org.dspace.content.authority.ChoiceAuthority;
 import org.dspace.content.authority.Choices;
+import org.dspace.content.authority.DSpaceControlledVocabularyIndex;
 
 /**
  * Broker for ChoiceAuthority plugins, and for other information configured
@@ -88,9 +90,6 @@ public interface ChoiceAuthorityService {
      */
     public Choices getMatches(String fieldKey, String query, Collection collection,
                               int start, int limit, String locale);
-
-    public Choices getMatches(String fieldKey, String query, Collection collection, int start, int limit, String locale,
-                              boolean externalInput);
 
     /**
      * Wrapper that calls getBestMatch method of the plugin corresponding to
@@ -176,7 +175,7 @@ public interface ChoiceAuthorityService {
     /**
      * This method has been created to have a way of clearing the cache kept inside the service
      */
-    public void clearCache();
+    public void clearCache() throws SubmissionConfigReaderException;
 
     /**
      * Should we store the authority key (if any) for such field key and collection?
@@ -223,4 +222,7 @@ public interface ChoiceAuthorityService {
      * @return the parent Choice object if any
      */
     public Choice getParentChoice(String authorityName, String vocabularyId, String locale);
+
+    public DSpaceControlledVocabularyIndex getVocabularyIndex(String nameVocab);
+
 }

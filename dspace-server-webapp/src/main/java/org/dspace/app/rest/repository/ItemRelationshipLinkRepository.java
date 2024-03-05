@@ -31,7 +31,7 @@ import org.springframework.stereotype.Component;
 /**
  * Link repository for "relationships" subresource of an individual item.
  */
-@Component(ItemRest.CATEGORY + "." + ItemRest.NAME + "." + ItemRest.RELATIONSHIPS)
+@Component(ItemRest.CATEGORY + "." + ItemRest.PLURAL_NAME + "." + ItemRest.RELATIONSHIPS)
 public class ItemRelationshipLinkRepository extends AbstractDSpaceRestRepository
         implements LinkRestRepository {
 
@@ -52,10 +52,10 @@ public class ItemRelationshipLinkRepository extends AbstractDSpaceRestRepository
             if (item == null) {
                 throw new ResourceNotFoundException("No such item: " + itemId);
             }
-            int total = relationshipService.countByItem(context, item);
+            int total = relationshipService.countByItem(context, item, true, true);
             Pageable pageable = utils.getPageable(optionalPageable);
             List<Relationship> relationships = relationshipService.findByItem(context, item,
-                    pageable.getPageSize(), Math.toIntExact(pageable.getOffset()));
+                    pageable.getPageSize(), Math.toIntExact(pageable.getOffset()), true, true);
             return converter.toRestPage(relationships, pageable, total, projection);
         } catch (SQLException e) {
             throw new RuntimeException(e);
