@@ -19,7 +19,7 @@
     <properties>
         <!-- This is the path to the root [dspace-src] directory. -->
         <root.basedir>${basedir}/..</root.basedir>
-        <dataformat.version>2.12.7</dataformat.version>
+        <jackson-dataformat.version>2.12.7</jackson-dataformat.version>
     </properties>
 
     <!--
@@ -627,7 +627,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-xml</artifactId>
-            <version>${dataformat.version}</version>
+            <version>${jackson-dataformat.version}</version>
             <exclusions>
                 <exclusion>
                     <groupId>com.fasterxml.woodstox</groupId>

@@ -17,7 +17,12 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.SQLException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import org.apache.commons.lang.StringUtils;
 import org.apache.logging.log4j.LogManager;
@@ -32,18 +37,20 @@ import org.apache.tika.sax.BodyContentHandler;
 import org.apache.tika.sax.ContentHandlerDecorator;
 import org.dspace.app.mediafilter.model.Page;
 import org.dspace.app.mediafilter.model.Pages;
+import org.dspace.authorize.AuthorizeException;
 import org.dspace.content.Bitstream;
 import org.dspace.content.Item;
+import org.dspace.content.service.BitstreamService;
 import org.dspace.core.Context;
 import org.dspace.services.ConfigurationService;
 import org.dspace.services.factory.DSpaceServicesFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.xml.sax.SAXException;
 
 public class StructuredPdfTextExtractionFilter extends MediaFilter {
-
   private final Splitter splitter = new Splitter();
   private final XmlMapper xmlMapper = new XmlMapper();
-  private final static Logger log = LogManager.getLogger();
+  private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH_mm_ss_SSS");
 
   @Override
   public String getFilteredName(String oldFileName) {
@@ -69,15 +76,6 @@ public class StructuredPdfTextExtractionFilter extends MediaFilter {
   public InputStream getDestinationStream(final Item item, final InputStream source, final boolean verbose)
     throws Exception {
 
-    ConfigurationService configurationService = DSpaceServicesFactory.getInstance().getConfigurationService();
-    boolean useTemporaryFile = configurationService.getBooleanProperty("textextractor.use-temp-file", false);
-
-    if (useTemporaryFile) {
-      return extractUsingTempFile(source, verbose);
-    }
-
-    String extractedText;
-
     PDDocument document = PDDocument.load(source);
     List<PDDocument> splitPages = splitter.split(document);
 
@@ -92,63 +90,15 @@ public class StructuredPdfTextExtractionFilter extends MediaFilter {
     Pages pages = new Pages(pageTexts);
 
     xmlMapper.enable(SerializationFeature.INDENT_OUTPUT);
-    ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-    xmlMapper.writeValue(byteArrayOutputStream, pages);
-    extractedText = byteArrayOutputStream.toString();
+    File tempFile = File.createTempFile("dspacetextextract" + dateFormat.format(new Date()), ".xml");
+    xmlMapper.writeValue(tempFile, pages);
 
-    if (StringUtils.isNotEmpty(extractedText)) {
-      return new ByteArrayInputStream(extractedText.getBytes(StandardCharsets.UTF_8));
-    }
-
-    return null;
+    return Files.newInputStream(Path.of(tempFile.getAbsolutePath()));
   }
 
-  private InputStream extractUsingTempFile(InputStream source, boolean verbose)
-    throws IOException, TikaException, SAXException {
-    File tempExtractedTextFile = File.createTempFile("dspacetextextract" + source.hashCode(), ".txt");
-
-    if (verbose) {
-      System.out.println("(Verbose mode) Extracted text was written to temporary file at " +
-        tempExtractedTextFile.getAbsolutePath());
-    } else {
-      tempExtractedTextFile.deleteOnExit();
-    }
-
-    try (FileWriter writer = new FileWriter(tempExtractedTextFile, StandardCharsets.UTF_8)) {
-      ContentHandlerDecorator handler = new BodyContentHandler(new ContentHandlerDecorator() {
-
-        @Override
-        public void characters(char[] ch, int start, int length) throws SAXException {
-          try {
-            writer.append(new String(ch), start, length);
-          } catch (IOException e) {
-            String errorMsg = String.format("Could not append to temporary file at %s " +
-                "when performing text extraction",
-              tempExtractedTextFile.getAbsolutePath());
-            log.error(errorMsg, e);
-            throw new SAXException(errorMsg, e);
-          }
-        }
-
-        @Override
-        public void ignorableWhitespace(char[] ch, int start, int length) throws SAXException {
-          try {
-            writer.append(new String(ch), start, length);
-          } catch (IOException e) {
-            String errorMsg = String.format("Could not append to temporary file at %s " +
-                "when performing text extraction",
-              tempExtractedTextFile.getAbsolutePath());
-            log.error(errorMsg, e);
-            throw new SAXException(errorMsg, e);
-          }
-        }
-      });
-
-      AutoDetectParser parser = new AutoDetectParser();
-      Metadata metadata = new Metadata();
-      parser.parse(source, handler, metadata);
-    }
-
-    return new FileInputStream(tempExtractedTextFile);
+  @Override
+  public boolean preProcessBitstream(Context c, Item item, Bitstream source, boolean verbose) throws SQLException {
+    return "application/pdf".equals(source.getFormat(c).getMIMEType());
   }
+
 }

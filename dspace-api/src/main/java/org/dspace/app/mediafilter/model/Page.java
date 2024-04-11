@@ -7,11 +7,14 @@
  */
 package org.dspace.app.mediafilter.model;
 
+import java.util.Objects;
+
 public class Page {
 
-  private final int pageNumber;
-  private final String text;
+  private int pageNumber;
+  private String text;
 
+  public Page(){}
   public Page(int pageNumber, String text) {
     this.pageNumber = pageNumber;
     this.text = text;
@@ -25,4 +28,18 @@ public class Page {
     return text;
   }
 
+  @Override
+  public boolean equals(final Object o) {
+    if (this == o)
+      return true;
+    if (o == null || getClass() != o.getClass())
+      return false;
+    final Page page = (Page) o;
+    return pageNumber == page.pageNumber && Objects.equals(text, page.text);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(pageNumber, text);
+  }
 }
