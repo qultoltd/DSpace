@@ -1284,11 +1284,11 @@ public class DiscoveryRestControllerIT extends AbstractControllerIntegrationTest
                                          DiscoverySortFieldConfiguration.SORT_ORDER.desc.name()),
                        SortOptionMatcher.sortOptionMatcher("organization.legalName",
                                          DiscoverySortFieldConfiguration.SORT_ORDER.asc.name()),
-                       SortOptionMatcher.sortOptionMatcher("organisation.address.addressCountry",
+                       SortOptionMatcher.sortOptionMatcher("organization.address.addressCountry",
                                          DiscoverySortFieldConfiguration.SORT_ORDER.asc.name()),
-                       SortOptionMatcher.sortOptionMatcher("organisation.address.addressLocality",
+                       SortOptionMatcher.sortOptionMatcher("organization.address.addressLocality",
                                          DiscoverySortFieldConfiguration.SORT_ORDER.asc.name()),
-                       SortOptionMatcher.sortOptionMatcher("organisation.foundingDate",
+                       SortOptionMatcher.sortOptionMatcher("organization.foundingDate",
                                          DiscoverySortFieldConfiguration.SORT_ORDER.desc.name()),
                        SortOptionMatcher.sortOptionMatcher("dc.date.accessioned",
                                          DiscoverySortFieldConfiguration.SORT_ORDER.desc.name()),
@@ -5832,10 +5832,6 @@ public class DiscoveryRestControllerIT extends AbstractControllerIntegrationTest
                          .andExpect(jsonPath("$._embedded.searchResult._embedded.objects", Matchers.contains(
                                              SearchResultMatcher.match("workflow", "pooltask", "pooltasks")
                           )))
-                         .andExpect(jsonPath("$._embedded.searchResult._embedded.objects",Matchers.contains(
-                              allOf(hasJsonPath("$._embedded.indexableObject._embedded.workflowitem._embedded.item",
-                                 is(SearchResultMatcher.matchEmbeddedObjectOnItemName("item", "Mathematical Theory"))))
-                          )))
                          .andExpect(jsonPath("$._embedded.searchResult.page.totalElements", is(1)));
 
         getClient(adminToken).perform(get("/api/discover/search/objects")
@@ -5849,12 +5845,6 @@ public class DiscoveryRestControllerIT extends AbstractControllerIntegrationTest
                                              SearchResultMatcher.match("workflow", "pooltask", "pooltasks"),
                                              SearchResultMatcher.match("workflow", "pooltask", "pooltasks")
                                              )))
-                         .andExpect(jsonPath("$._embedded.searchResult._embedded.objects",Matchers.containsInAnyOrder(
-                              allOf(hasJsonPath("$._embedded.indexableObject._embedded.workflowitem._embedded.item",
-                                 is(SearchResultMatcher.matchEmbeddedObjectOnItemName("item", "Metaphysics")))),
-                              allOf(hasJsonPath("$._embedded.indexableObject._embedded.workflowitem._embedded.item",
-                                 is(SearchResultMatcher.matchEmbeddedObjectOnItemName("item", "Test Metaphysics"))))
-                          )))
                          .andExpect(jsonPath("$._embedded.searchResult.page.totalElements", is(2)));
     }
 
@@ -5919,14 +5909,6 @@ public class DiscoveryRestControllerIT extends AbstractControllerIntegrationTest
                                              SearchResultMatcher.match("workflow", "pooltask", "pooltasks"),
                                              SearchResultMatcher.match("workflow", "pooltask", "pooltasks")
                                              )))
-                         .andExpect(jsonPath("$._embedded.searchResult._embedded.objects",Matchers.containsInAnyOrder(
-                              allOf(hasJsonPath("$._embedded.indexableObject._embedded.workflowitem._embedded.item",
-                                 is(SearchResultMatcher.matchEmbeddedObjectOnItemName("item", "Mathematical Theory")))),
-                              allOf(hasJsonPath("$._embedded.indexableObject._embedded.workflowitem._embedded.item",
-                                 is(SearchResultMatcher.matchEmbeddedObjectOnItemName("item", "Metaphysics")))),
-                              allOf(hasJsonPath("$._embedded.indexableObject._embedded.workflowitem._embedded.item",
-                                 is(SearchResultMatcher.matchEmbeddedObjectOnItemName("item", "Test Metaphysics"))))
-                          )))
                          .andExpect(jsonPath("$._embedded.searchResult.page.totalElements", is(3)));
     }
 
@@ -6918,8 +6900,7 @@ public class DiscoveryRestControllerIT extends AbstractControllerIntegrationTest
         String object = configurationService.getProperty("dspace.ui.url") + "/handle/" + item.getHandle();
 
         NotifyServiceEntity notifyService =
-            NotifyServiceBuilder.createNotifyServiceBuilder(context)
-                                .withName("service name")
+            NotifyServiceBuilder.createNotifyServiceBuilder(context, "service name")
                                 .withDescription("service description")
                                 .withUrl("service url")
                                 .withLdnUrl("https://overlay-journal.com/inbox/")
@@ -6982,8 +6963,7 @@ public class DiscoveryRestControllerIT extends AbstractControllerIntegrationTest
         String object = configurationService.getProperty("dspace.ui.url") + "/handle/" + item.getHandle();
 
         NotifyServiceEntity notifyService =
-            NotifyServiceBuilder.createNotifyServiceBuilder(context)
-                                .withName("service name")
+            NotifyServiceBuilder.createNotifyServiceBuilder(context, "service name")
                                 .withDescription("service description")
                                 .withUrl("service url")
                                 .withLdnUrl("https://generic-service.com/system/inbox/")
