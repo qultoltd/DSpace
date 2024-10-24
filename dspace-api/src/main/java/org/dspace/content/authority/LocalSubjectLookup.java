@@ -104,25 +104,26 @@ public class LocalSubjectLookup implements ChoiceAuthority {
 
   @Override
   public Choices getBestMatch(String text, String locale) {
-    System.out.println("Local Subject Lookup - getBestMatch");
-    return null;
+    Choices matches = getMatches(text, 0, 1, locale);
+    if (matches.values.length != 0 && !matches.values[0].value.equalsIgnoreCase(text)) {
+      matches = new Choices(false);
+    }
+    return matches;
   }
 
   @Override
   public String getLabel(String key, String locale) {
-    System.out.println("Local Subject Lookup - getLabel");
-    return "";
+    Choice match = getMatches(key, 0, 1, locale).values[0];
+    return match.label;
   }
 
   @Override
   public String getPluginInstanceName() {
-    System.out.println("Local Subject Lookup - getPluginInstanceName");
     return pluginInstanceName;
   }
 
   @Override
   public void setPluginInstanceName(String name) {
-    System.out.println("Local Subject Lookup - setPluginInstanceName: " + name);
     this.pluginInstanceName = name;
     for (Map.Entry conf : configurationService.getProperties().entrySet()) {
       if (StringUtils.startsWith((String) conf.getKey(), ChoiceAuthorityServiceImpl.CHOICES_PLUGIN_PREFIX)
