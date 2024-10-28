@@ -160,7 +160,7 @@
                <dc-qualifier></dc-qualifier>
                <repeatable>true</repeatable>
                <label>Type</label>
-               <input-type value-pairs-name="common_types">dropdown</input-type>
+               <input-type>tag</input-type>
                <hint>Select the type of content of the item.
                </hint>
                <required>You must choose at least one type.</required>

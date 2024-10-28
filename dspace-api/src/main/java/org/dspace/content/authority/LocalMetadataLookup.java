@@ -18,9 +18,9 @@ import org.dspace.discovery.SolrSearchCore;
 import org.dspace.services.ConfigurationService;
 import org.dspace.services.factory.DSpaceServicesFactory;
 
-public class LocalSubjectLookup implements ChoiceAuthority {
+public class LocalMetadataLookup implements ChoiceAuthority {
 
-  private static final Logger log = LogManager.getLogger(LocalSubjectLookup.class);
+  private static final Logger log = LogManager.getLogger(LocalMetadataLookup.class);
 
   private String pluginInstanceName;
 
@@ -67,10 +67,11 @@ public class LocalSubjectLookup implements ChoiceAuthority {
             @SuppressWarnings("unchecked")
             List<String> values = (List<String>) solrDocument.getFieldValue(field);
             values.stream()
-              .filter(val -> val.contains(text))
+              .filter(val -> val.toLowerCase().contains(text.toLowerCase()))
               .forEach(val -> {
                 if (choices.stream().noneMatch(c -> val.equals(c.authority))) {
-                  choices.add(new Choice(val, val, val));
+                  choices.add(new Choice(val, val,
+                    val)); // in this case, the authority is not taken into account, authority, value and the label are all the same
                 }
               });
           }
@@ -99,7 +100,7 @@ public class LocalSubjectLookup implements ChoiceAuthority {
       result = new Choices(true);
     }
 
-    return result;  //To change body of implemented methods use File | Settings | File Templates.
+    return result;
   }
 
   @Override
