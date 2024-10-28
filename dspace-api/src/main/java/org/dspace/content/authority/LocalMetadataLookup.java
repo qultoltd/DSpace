@@ -2,7 +2,6 @@ package org.dspace.content.authority;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
@@ -26,6 +25,8 @@ public class LocalMetadataLookup implements ChoiceAuthority {
 
   private String field;
 
+  private String order = "index";
+
   protected final ConfigurationService configurationService
     = DSpaceServicesFactory.getInstance().getConfigurationService();
 
@@ -39,6 +40,7 @@ public class LocalMetadataLookup implements ChoiceAuthority {
     solrQuery.setFacetPrefix(field, text);
     solrQuery.set(CommonParams.START, 0);
     solrQuery.set(CommonParams.ROWS, 0);
+    solrQuery.add("f." + field + "." + FacetParams.FACET_SORT, order);
 
     Choices result;
 
@@ -71,7 +73,7 @@ public class LocalMetadataLookup implements ChoiceAuthority {
       }
 
       result = new Choices(
-        choices.stream().sorted(Comparator.comparing(c -> c.label)).toList().toArray(new Choice[choices.size()]),
+        choices.toArray(new Choice[choices.size()]),
         start,
         hasMore ? max : choices.size() + start,
         confidence,
@@ -116,10 +118,14 @@ public class LocalMetadataLookup implements ChoiceAuthority {
         break;
       }
     }
-  }
 
-  private String toQuery(String searchField, String text) {
-    return searchField + ":" + text.toLowerCase().replaceAll(":", "\\\\:") + "*";
+    for (Map.Entry conf : configurationService.getProperties().entrySet()) {
+      if (conf.getKey().equals("choices.order." + field)) {
+        order = ((String) conf.getValue());
+        // exit the look immediately as we have found it
+        break;
+      }
+    }
   }
 
   public static SolrSearchCore getSearchCore() {
