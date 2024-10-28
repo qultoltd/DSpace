@@ -10,10 +10,10 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.response.FacetField;
 import org.apache.solr.client.solrj.response.QueryResponse;
-import org.apache.solr.common.SolrDocument;
-import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.params.CommonParams;
+import org.apache.solr.common.params.FacetParams;
 import org.dspace.discovery.SolrSearchCore;
 import org.dspace.services.ConfigurationService;
 import org.dspace.services.factory.DSpaceServicesFactory;
@@ -32,17 +32,13 @@ public class LocalMetadataLookup implements ChoiceAuthority {
   @Override
   public Choices getMatches(String text, int start, int limit, String locale) {
     SolrQuery solrQuery = new SolrQuery();
-    if (text == null || text.trim().equals("")) {
-      solrQuery.setQuery("*:*");
-    } else {
-      String query = toQuery(field, text);
-      solrQuery.setQuery(query);
-    }
 
-    solrQuery.set(CommonParams.START, start);
-
-    int maxNumberOfSolrResults = limit + 1;
-    solrQuery.set(CommonParams.ROWS, maxNumberOfSolrResults);
+    solrQuery.setQuery("*:*");
+    solrQuery.addFacetField(field);
+    solrQuery.add("f." + field + "." + FacetParams.FACET_LIMIT, String.valueOf(limit + 1));
+    solrQuery.setFacetPrefix(field, text);
+    solrQuery.set(CommonParams.START, 0);
+    solrQuery.set(CommonParams.ROWS, 0);
 
     Choices result;
 
@@ -51,31 +47,17 @@ public class LocalMetadataLookup implements ChoiceAuthority {
       boolean hasMore = false;
       SolrSearchCore solrSearchCore = getSearchCore();
       QueryResponse searchResponse = solrSearchCore.getSolr().query(solrQuery, solrSearchCore.REQUEST_METHOD);
-      SolrDocumentList authDocs = searchResponse.getResults();
+      List<FacetField.Count> facetValues = searchResponse.getFacetFields().get(0).getValues();
       ArrayList<Choice> choices = new ArrayList<>();
-      if (authDocs != null) {
-        max = (int) searchResponse.getResults().getNumFound();
-        int maxDocs = authDocs.size();
-        if (limit < maxDocs) {
-          maxDocs = limit;
+      if (facetValues != null && !facetValues.isEmpty()) {
+        max = facetValues.size();
+        int maxDocs = max;
+
+        for (FacetField.Count facet : facetValues) {
+          choices.add(new Choice(facet.getName(), facet.getName(),
+            facet.getName())); // in this case, the authority is not taken into account, authority, value and the label are all the same
         }
 
-        for (int i = 0; i < maxDocs; i++) {
-          SolrDocument solrDocument = authDocs.get(i);
-
-          if (solrDocument != null) {
-            @SuppressWarnings("unchecked")
-            List<String> values = (List<String>) solrDocument.getFieldValue(field);
-            values.stream()
-              .filter(val -> val.toLowerCase().contains(text.toLowerCase()))
-              .forEach(val -> {
-                if (choices.stream().noneMatch(c -> val.equals(c.authority))) {
-                  choices.add(new Choice(val, val,
-                    val)); // in this case, the authority is not taken into account, authority, value and the label are all the same
-                }
-              });
-          }
-        }
         hasMore = true;
       }
 
