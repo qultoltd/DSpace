@@ -13,6 +13,7 @@ import org.apache.solr.client.solrj.response.FacetField;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.FacetParams;
+import org.dspace.discovery.SearchUtils;
 import org.dspace.discovery.SolrSearchCore;
 import org.dspace.services.ConfigurationService;
 import org.dspace.services.factory.DSpaceServicesFactory;
@@ -27,6 +28,8 @@ public class LocalMetadataLookup implements ChoiceAuthority {
 
   private String order = "index";
 
+  String separator = SearchUtils.FILTER_SEPARATOR;
+
   protected final ConfigurationService configurationService
     = DSpaceServicesFactory.getInstance().getConfigurationService();
 
@@ -37,10 +40,12 @@ public class LocalMetadataLookup implements ChoiceAuthority {
     solrQuery.setQuery("*:*");
     solrQuery.addFacetField(field);
     solrQuery.add("f." + field + "." + FacetParams.FACET_LIMIT, String.valueOf(limit + 1));
-    solrQuery.setFacetPrefix(field, text);
+    solrQuery.setFacetPrefix(field, text.toLowerCase());
     solrQuery.set(CommonParams.START, 0);
     solrQuery.set(CommonParams.ROWS, 0);
     solrQuery.add("f." + field + "." + FacetParams.FACET_SORT, order);
+    solrQuery.add("f." + field + "." + FacetParams.FACET_MINCOUNT, String.valueOf(1));
+    solrQuery.set(CommonParams.FQ, "search.resourcetype:Item AND latestVersion:true");
 
     Choices result;
 
@@ -56,8 +61,9 @@ public class LocalMetadataLookup implements ChoiceAuthority {
         int maxDocs = max;
 
         for (FacetField.Count facet : facetValues) {
-          choices.add(new Choice(facet.getName(), facet.getName(),
-            facet.getName())); // in this case, the authority is not taken into account, authority, value and the label are all the same
+          String value = getDisplayValue(facet.getName());
+          choices.add(new Choice(null, value,
+            value)); // in this case, the authority is not taken into account, authority, value and the label are all the same
         }
 
         hasMore = true;
@@ -110,29 +116,53 @@ public class LocalMetadataLookup implements ChoiceAuthority {
   @Override
   public void setPluginInstanceName(String name) {
     this.pluginInstanceName = name;
+    String fieldName = "";
+
+    String separatorFromConfig = configurationService.getProperty("discovery.solr.facets.split.char");
+
+    if (separatorFromConfig != null) {
+      separator = separatorFromConfig;
+    }
+
     for (Map.Entry conf : configurationService.getProperties().entrySet()) {
       if (StringUtils.startsWith((String) conf.getKey(), ChoiceAuthorityServiceImpl.CHOICES_PLUGIN_PREFIX)
         && StringUtils.equals((String) conf.getValue(), name)) {
-        field = ((String) conf.getKey()).substring(ChoiceAuthorityServiceImpl.CHOICES_PLUGIN_PREFIX.length());
+        fieldName = ((String) conf.getKey()).substring(ChoiceAuthorityServiceImpl.CHOICES_PLUGIN_PREFIX.length());
+        field = fieldName;
         // exit the look immediately as we have found it
         break;
       }
     }
 
     for (Map.Entry conf : configurationService.getProperties().entrySet()) {
-      if (conf.getKey().equals("choices.order." + field)) {
+      if (conf.getKey().equals("choices.order." + fieldName)) {
         order = ((String) conf.getValue());
-        // exit the look immediately as we have found it
-        break;
+      }
+
+      if (conf.getKey().equals("choices.index." + fieldName)) {
+        field = ((String) conf.getValue());
       }
     }
   }
 
-  public static SolrSearchCore getSearchCore() {
+  private SolrSearchCore getSearchCore() {
     return DSpaceServicesFactory
       .getInstance()
       .getServiceManager()
       .getServicesByType(SolrSearchCore.class)
       .get(0);
+  }
+
+  private String getDisplayValue(String value) {
+    //Escape any regex chars
+    String currentSeparator = java.util.regex.Pattern.quote(separator);
+    String[] fqParts = value.split(currentSeparator);
+    StringBuilder valueBuffer = new StringBuilder();
+    int start = fqParts.length / 2;
+    for (int i = start; i < fqParts.length; i++) {
+      String[] split = fqParts[i].split(SearchUtils.AUTHORITY_SEPARATOR, 2);
+      valueBuffer.append(split[0]);
+    }
+    return valueBuffer.toString();
   }
 }
