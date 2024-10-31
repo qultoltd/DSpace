@@ -18,6 +18,8 @@ import org.dspace.discovery.SolrSearchCore;
 import org.dspace.services.ConfigurationService;
 import org.dspace.services.factory.DSpaceServicesFactory;
 
+import static org.dspace.content.authority.ChoiceAuthorityServiceImpl.*;
+
 public class LocalMetadataLookup implements ChoiceAuthority {
 
   private static final Logger log = LogManager.getLogger(LocalMetadataLookup.class);
@@ -58,12 +60,11 @@ public class LocalMetadataLookup implements ChoiceAuthority {
       ArrayList<Choice> choices = new ArrayList<>();
       if (facetValues != null && !facetValues.isEmpty()) {
         max = facetValues.size();
-        int maxDocs = max;
 
         for (FacetField.Count facet : facetValues) {
           String value = getDisplayValue(facet.getName());
-          choices.add(new Choice(null, value,
-            value)); // in this case, the authority is not taken into account, authority, value and the label are all the same
+          // in this case, the authority is not taken into account
+          choices.add(new Choice(null, value, value));
         }
 
         hasMore = true;
@@ -135,11 +136,11 @@ public class LocalMetadataLookup implements ChoiceAuthority {
     }
 
     for (Map.Entry conf : configurationService.getProperties().entrySet()) {
-      if (conf.getKey().equals("choices.order." + fieldName)) {
+      if (conf.getKey().equals(CHOICES_ORDER_PREFIX + fieldName)) {
         order = ((String) conf.getValue());
       }
 
-      if (conf.getKey().equals("choices.index." + fieldName)) {
+      if (conf.getKey().equals(CHOICES_INDEX_PREFIX + fieldName)) {
         field = ((String) conf.getValue());
       }
     }
