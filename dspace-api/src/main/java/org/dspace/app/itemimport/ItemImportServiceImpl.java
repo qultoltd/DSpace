@@ -30,12 +30,13 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.URL;
 import java.sql.SQLException;
-import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.Enumeration;
-import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -1425,11 +1426,11 @@ public class ItemImportServiceImpl implements ItemImportService, InitializingBea
 
         if (bundleName == null) {
             // is it license.txt?
-            if ("license.txt".equals(fileName)) {
-                newBundleName = "LICENSE";
+            if (Constants.LICENSE_BITSTREAM_NAME.equals(fileName)) {
+                newBundleName = Constants.LICENSE_BUNDLE_NAME;
             } else {
                 // call it ORIGINAL
-                newBundleName = "ORIGINAL";
+                newBundleName = Constants.CONTENT_BUNDLE_NAME;
             }
         }
 
@@ -1493,11 +1494,11 @@ public class ItemImportServiceImpl implements ItemImportService, InitializingBea
 
         if (StringUtils.isBlank(bundleName)) {
             // is it license.txt?
-            if (bitstreamPath.endsWith("license.txt")) {
-                newBundleName = "LICENSE";
+            if (bitstreamPath.endsWith(Constants.LICENSE_BITSTREAM_NAME)) {
+                newBundleName = Constants.LICENSE_BUNDLE_NAME;
             } else {
                 // call it ORIGINAL
-                newBundleName = "ORIGINAL";
+                newBundleName = Constants.CONTENT_BUNDLE_NAME;
             }
         }
 
@@ -2039,8 +2040,8 @@ public class ItemImportServiceImpl implements ItemImportService, InitializingBea
      */
     protected String generateRandomFilename(boolean hidden) {
         String filename = String.format("%s", RandomStringUtils.randomAlphanumeric(8));
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmm");
-        String datePart = sdf.format(new Date());
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm");
+        String datePart = formatter.format(LocalDateTime.now(ZoneOffset.UTC));
         filename = datePart + "_" + filename;
 
         return filename;
@@ -2102,8 +2103,7 @@ public class ItemImportServiceImpl implements ItemImportService, InitializingBea
                         "org.dspace.app.batchitemimport.work.dir") + File.separator + "batchuploads" + File.separator
                         + context
                         .getCurrentUser()
-                        .getID() + File.separator + (isResume ? theResumeDir : (new GregorianCalendar())
-                        .getTimeInMillis());
+                        .getID() + File.separator + (isResume ? theResumeDir : Instant.now().toEpochMilli());
                     File importDirFile = new File(importDir);
                     if (!importDirFile.exists()) {
                         boolean success = importDirFile.mkdirs();
@@ -2210,7 +2210,7 @@ public class ItemImportServiceImpl implements ItemImportService, InitializingBea
                         emailErrorMessage(eperson, exceptionString);
                         throw new Exception(e.getMessage());
                     } catch (Exception e2) {
-                        // wont throw here
+                        // won't throw here
                     }
                 } finally {
                     // Make sure the database connection gets closed in all conditions.
