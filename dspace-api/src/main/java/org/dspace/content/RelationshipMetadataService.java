@@ -10,6 +10,7 @@ package org.dspace.content;
 import java.sql.SQLException;
 import java.util.List;
 
+import org.dspace.content.virtual.PlaceContext;
 import org.dspace.content.virtual.VirtualMetadataPopulator;
 import org.dspace.core.Context;
 
@@ -49,7 +50,7 @@ public interface RelationshipMetadataService {
      * @return                      The list of virtual metadata values
      */
     public List<RelationshipMetadataValue> findRelationshipMetadataValueForItemRelationship(
-        Context context, Item item, String entityType, Relationship relationship, boolean enableVirtualMetadata)
+        Context context, Item item, String entityType, Relationship relationship, boolean enableVirtualMetadata, PlaceContext placeContext)
         throws SQLException;
 
     /**

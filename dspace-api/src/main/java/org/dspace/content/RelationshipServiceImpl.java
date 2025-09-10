@@ -29,6 +29,7 @@ import org.dspace.content.service.EntityTypeService;
 import org.dspace.content.service.ItemService;
 import org.dspace.content.service.RelationshipService;
 import org.dspace.content.service.RelationshipTypeService;
+import org.dspace.content.virtual.PlaceContext;
 import org.dspace.content.virtual.VirtualMetadataConfiguration;
 import org.dspace.content.virtual.VirtualMetadataPopulator;
 import org.dspace.core.Constants;
@@ -868,7 +869,7 @@ public class RelationshipServiceImpl implements RelationshipService {
             String entityTypeString = itemService.getEntityTypeLabel(relationship.getLeftItem());
             List<RelationshipMetadataValue> relationshipMetadataValues =
                 relationshipMetadataService.findRelationshipMetadataValueForItemRelationship(context,
-                    relationship.getLeftItem(), entityTypeString, relationship, true);
+                    relationship.getLeftItem(), entityTypeString, relationship, true, new PlaceContext());
             for (RelationshipMetadataValue relationshipMetadataValue : relationshipMetadataValues) {
                 // This adds the plain text metadata values on the same spot as the virtual values.
                 // This will be overruled in org.dspace.content.DSpaceObjectServiceImpl.update
@@ -894,7 +895,7 @@ public class RelationshipServiceImpl implements RelationshipService {
             String entityTypeString = itemService.getEntityTypeLabel(relationship.getRightItem());
             List<RelationshipMetadataValue> relationshipMetadataValues =
                 relationshipMetadataService.findRelationshipMetadataValueForItemRelationship(context,
-                    relationship.getRightItem(), entityTypeString, relationship, true);
+                    relationship.getRightItem(), entityTypeString, relationship, true, new PlaceContext());
             for (RelationshipMetadataValue relationshipMetadataValue : relationshipMetadataValues) {
                 itemService.addMetadata(context, relationship.getRightItem(),
                                                      relationshipMetadataValue.getMetadataField().

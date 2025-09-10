@@ -22,8 +22,8 @@ public class UUIDValue implements VirtualMetadataConfiguration {
     private boolean useForPlace;
 
     @Override
-    public List<String> getValues(Context context, Item item) throws SQLException {
-        return List.of(String.valueOf(item.getID()));
+    public List<VirtualMetadataEntry> getValues(Context context, Item item) throws SQLException {
+        return List.of(new VirtualMetadataEntry(String.valueOf(item.getID())));
     }
 
     @Override

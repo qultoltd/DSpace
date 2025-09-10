@@ -94,8 +94,8 @@ public class Collected implements VirtualMetadataConfiguration {
      * @param item      The item that will be used to either retrieve metadata values from
      * @return The String values for all of the retrieved metadatavalues
      */
-    public List<String> getValues(Context context, Item item) {
-        List<String> resultValues = new LinkedList<>();
+    public List<VirtualMetadataEntry> getValues(Context context, Item item) {
+        List<VirtualMetadataEntry> resultValues = new LinkedList<>();
         List<String> value = this.getFields();
         for (String s : value) {
             String[] splittedString = s.split("\\.");
@@ -111,7 +111,10 @@ public class Collected implements VirtualMetadataConfiguration {
 
             for (MetadataValue metadataValue : resultList) {
                 if (StringUtils.isNotBlank(metadataValue.getValue())) {
-                    resultValues.add(metadataValue.getValue());
+
+                    String stringValue = metadataValue.getValue();
+                    String language = metadataValue.getLanguage();
+                    resultValues.add(new VirtualMetadataEntry(stringValue, language));
                 }
             }
         }

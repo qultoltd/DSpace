@@ -145,7 +145,7 @@ public class Related implements VirtualMetadataConfiguration {
      * @throws SQLException If something goes wrong
      */
     @Override
-    public List<String> getValues(Context context, Item item) throws SQLException {
+    public List<VirtualMetadataEntry> getValues(Context context, Item item) throws SQLException {
         Entity entity = entityService.findByItemId(context, item.getID());
         EntityType entityType = entityService.getType(context, entity);
 

@@ -29,7 +29,7 @@ public interface VirtualMetadataConfiguration {
      * @return The list of String values of all the metadata values as constructed by the responsible bean
      * @throws SQLException If something goes wrong
      */
-    List<String> getValues(Context context, Item item) throws SQLException;
+    List<VirtualMetadataEntry> getValues(Context context, Item item) throws SQLException;
 
     /**
      * Generic setter for the useForPlace property

@@ -114,7 +114,7 @@ public class Concatenate implements VirtualMetadataConfiguration {
      * @return The String value for all of the retrieved metadatavalues combined with the separator
      */
     @Override
-    public List<String> getValues(Context context, Item item) {
+    public List<VirtualMetadataEntry> getValues(Context context, Item item) {
 
         List<String> resultValues = new LinkedList<>();
         List<String> value = this.getFields();
@@ -146,8 +146,8 @@ public class Concatenate implements VirtualMetadataConfiguration {
         }
 
         String result = StringUtils.join(resultValues, this.getSeparator());
-        List<String> listToReturn = new LinkedList<>();
-        listToReturn.add(result);
+        List<VirtualMetadataEntry> listToReturn = new LinkedList<>();
+        listToReturn.add(new VirtualMetadataEntry(result, null));
         return listToReturn;
     }
 

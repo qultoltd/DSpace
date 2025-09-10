@@ -25,7 +25,9 @@ import org.dspace.content.service.ItemService;
 import org.dspace.content.service.MetadataFieldService;
 import org.dspace.content.service.RelationshipService;
 import org.dspace.content.service.RelationshipTypeService;
+import org.dspace.content.virtual.PlaceContext;
 import org.dspace.content.virtual.VirtualMetadataConfiguration;
+import org.dspace.content.virtual.VirtualMetadataEntry;
 import org.dspace.content.virtual.VirtualMetadataPopulator;
 import org.dspace.core.Constants;
 import org.dspace.core.Context;
@@ -57,6 +59,7 @@ public class RelationshipMetadataServiceImpl implements RelationshipMetadataServ
     public List<RelationshipMetadataValue> getRelationshipMetadata(Item item, boolean enableVirtualMetadata) {
         Context context = new Context();
         List<RelationshipMetadataValue> fullMetadataValueList = new LinkedList<>();
+        PlaceContext placeContext = new PlaceContext();
         try {
             EntityType entityType = itemService.getEntityType(context, item);
             if (entityType != null) {
@@ -77,7 +80,7 @@ public class RelationshipMetadataServiceImpl implements RelationshipMetadataServ
                 for (Relationship relationship : relationships) {
                     fullMetadataValueList
                         .addAll(findRelationshipMetadataValueForItemRelationship(context, item, entityType.getLabel(),
-                                relationship, enableVirtualMetadata));
+                                relationship, enableVirtualMetadata, placeContext));
                 }
 
             }
@@ -176,7 +179,7 @@ public class RelationshipMetadataServiceImpl implements RelationshipMetadataServ
 
     @Override
     public List<RelationshipMetadataValue> findRelationshipMetadataValueForItemRelationship(
-            Context context, Item item, String entityType, Relationship relationship, boolean enableVirtualMetadata)
+            Context context, Item item, String entityType, Relationship relationship, boolean enableVirtualMetadata, PlaceContext placeContext)
         throws SQLException {
         List<RelationshipMetadataValue> resultingMetadataValueList = new LinkedList<>();
         RelationshipType relationshipType = relationship.getRelationshipType();
@@ -209,7 +212,7 @@ public class RelationshipMetadataServiceImpl implements RelationshipMetadataServ
         if (hashMaps != null && enableVirtualMetadata) {
             resultingMetadataValueList.addAll(findVirtualMetadataFromConfiguration(context, item, hashMaps,
                                                                                     otherItem, relationName,
-                                                                                    relationship, place, isLeftwards));
+                                                                                    relationship, place, isLeftwards, placeContext));
         }
         RelationshipMetadataValue relationMetadataFromOtherItem =
             getRelationMetadataFromOtherItem(context, otherItem, relationName, relationship.getID(), place);
@@ -238,7 +241,7 @@ public class RelationshipMetadataServiceImpl implements RelationshipMetadataServ
      */
     private List<RelationshipMetadataValue> findVirtualMetadataFromConfiguration(Context context, Item item,
         HashMap<String, VirtualMetadataConfiguration> hashMaps, Item otherItem, String relationName,
-        Relationship relationship, int place, boolean isLeftwards) throws SQLException {
+        Relationship relationship, int place, boolean isLeftwards, PlaceContext placeContext) throws SQLException {
 
         List<RelationshipMetadataValue> resultingMetadataValueList = new LinkedList<>();
         for (Map.Entry<String, VirtualMetadataConfiguration> entry : hashMaps.entrySet()) {
@@ -250,16 +253,16 @@ public class RelationshipMetadataServiceImpl implements RelationshipMetadataServ
                 if (wardLabel != null) {
                     resultingMetadataValueList.add(
                         constructRelationshipMetadataValue(context, item, relationship.getID(), place, key, virtualBean,
-                                                           wardLabel));
+                                                           wardLabel, null));
                 } else {
                     resultingMetadataValueList.addAll(
                             findRelationshipMetadataValueFromBean(context, item, otherItem, relationship, place, key,
-                                    virtualBean));
+                                    virtualBean, placeContext));
                 }
             } else {
                 resultingMetadataValueList.addAll(
                         findRelationshipMetadataValueFromBean(context, item, otherItem, relationship, place, key,
-                                virtualBean));
+                                virtualBean, placeContext));
             }
         }
         return resultingMetadataValueList;
@@ -283,19 +286,19 @@ public class RelationshipMetadataServiceImpl implements RelationshipMetadataServ
      */
     private List<RelationshipMetadataValue> findRelationshipMetadataValueFromBean(
             Context context, Item item, Item otherItem, Relationship relationship, int place,
-            String key, VirtualMetadataConfiguration virtualBean) throws SQLException {
+            String key, VirtualMetadataConfiguration virtualBean, PlaceContext placeContext) throws SQLException {
         List<RelationshipMetadataValue> resultingMetadataValueList = new LinkedList<>();
-        for (String value : virtualBean.getValues(context, otherItem)) {
-            RelationshipMetadataValue relationshipMetadataValue = constructRelationshipMetadataValue(context, item,
-                                                                                                     relationship
-                                                                                                         .getID(),
-                                                                                                     place,
-                                                                                                     key, virtualBean,
-                                                                                                     value);
+
+        for (VirtualMetadataEntry virtualMetadataEntry : virtualBean.getValues(context, otherItem)) {
+            RelationshipMetadataValue relationshipMetadataValue =
+                constructRelationshipMetadataValue(context, item, relationship.getID(), placeContext.getNextPlaceFor(key), key, virtualBean,
+                  virtualMetadataEntry.getValue(), virtualMetadataEntry.getLanguage());
+
             if (relationshipMetadataValue != null) {
                 resultingMetadataValueList.add(relationshipMetadataValue);
             }
         }
+
         return resultingMetadataValueList;
     }
 
@@ -305,10 +308,11 @@ public class RelationshipMetadataServiceImpl implements RelationshipMetadataServ
                                                                          Integer relationshipId, int place,
                                                                          String key,
                                                                          VirtualMetadataConfiguration virtualBean,
-                                                                         String value) {
+                                                                         String value,
+                                                                         String language) {
         RelationshipMetadataValue metadataValue = constructMetadataValue(context, key);
         if (metadataValue != null) {
-            metadataValue = constructResultingMetadataValue(item, value, metadataValue, relationshipId);
+            metadataValue = constructResultingMetadataValue(item, value, language, metadataValue, relationshipId);
             metadataValue.setUseForPlace(virtualBean.getUseForPlace());
             metadataValue.setPlace(place);
             if (StringUtils.isNotBlank(metadataValue.getValue())) {
@@ -347,10 +351,11 @@ public class RelationshipMetadataServiceImpl implements RelationshipMetadataServ
 
 
     //This method will update a RelationshipMetadataValue object with authority info and relation to the item
-    private RelationshipMetadataValue constructResultingMetadataValue(Item item, String value,
+    private RelationshipMetadataValue constructResultingMetadataValue(Item item, String value, String language,
                                                                       RelationshipMetadataValue metadataValue,
                                                                       Integer relationshipId) {
         metadataValue.setValue(value);
+        metadataValue.setLanguage(language);
         metadataValue.setAuthority(Constants.VIRTUAL_AUTHORITY_PREFIX + relationshipId);
         metadataValue.setConfidence(-1);
         metadataValue.setDSpaceObject(item);
