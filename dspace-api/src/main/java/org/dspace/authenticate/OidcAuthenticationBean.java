@@ -14,6 +14,7 @@ import static org.apache.commons.lang.BooleanUtils.toBoolean;
 import static org.apache.commons.lang3.StringUtils.isAnyBlank;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 
+import jakarta.servlet.http.HttpSession;
 import java.io.UnsupportedEncodingException;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -106,6 +107,9 @@ public class OidcAuthenticationBean implements AuthenticationMethod {
             if (groupNames == null || groupNames.length == 0) {
                 groupNames = configurationService
                     .getArrayProperty("authentication-oidc.role-mapping." + group.toLowerCase());
+            }
+            if (groupNames == null || groupNames.length == 0) {
+                continue;
             }
 
             for (final String groupName : groupNames) {
@@ -301,6 +305,29 @@ public class OidcAuthenticationBean implements AuthenticationMethod {
         if (StringUtils.isEmpty(value)) {
             value = request.getHeader(name);
         }
+
+        if (StringUtils.isEmpty(value)) {
+            HttpSession session = request.getSession(false);
+            if (session != null) {
+                Object sv = session.getAttribute(name);
+                if (sv != null) {
+                    value = String.valueOf(sv);
+                }
+                if (StringUtils.isEmpty(value)) {
+                    sv = session.getAttribute(name.toLowerCase());
+                    if (sv != null) {
+                        value = String.valueOf(sv);
+                    }
+                }
+                if (StringUtils.isEmpty(value)) {
+                    sv = session.getAttribute(name.toUpperCase());
+                    if (sv != null) {
+                        value = String.valueOf(sv);
+                    }
+                }
+            }
+        }
+
         if (StringUtils.isEmpty(value)) {
             value = request.getHeader(name.toLowerCase());
         }
@@ -374,6 +401,8 @@ public class OidcAuthenticationBean implements AuthenticationMethod {
         String groupsJoined = extractGroupsAsSemicolonString(userInfo.get(groupsClaimName));
         if (StringUtils.isNotBlank(groupsJoined)) {
             request.setAttribute(OIDC_GROUPS_ATTRIBUTE, groupsJoined);
+            HttpSession session = request.getSession(true);
+            session.setAttribute(OIDC_GROUPS_ATTRIBUTE, groupsJoined);
             LOGGER.debug("OIDC groups claim '{}' found -> {}", groupsClaimName, groupsJoined);
         } else {
             LOGGER.debug("No OIDC groups found under claim '{}'", groupsClaimName);
@@ -388,12 +417,14 @@ public class OidcAuthenticationBean implements AuthenticationMethod {
         EPerson ePerson = ePersonService.findByEmail(context, email);
         if (ePerson != null) {
             request.setAttribute(OIDC_AUTHENTICATED, true);
+            HttpSession session = request.getSession(true);
+            session.setAttribute(OIDC_GROUPS_ATTRIBUTE, groupsJoined);
             int result = ePerson.canLogIn() ? logInEPerson(context, ePerson) : BAD_ARGS;
             LOGGER.info("Check user groups");
             if (result == SUCCESS && userInfo.get(groupsClaimName) instanceof List) {
                 LOGGER.info("Group list valid");
                 List<String> groupList = (List<String>) userInfo.get(groupsClaimName);
-                //setSpecialGroups(context, groupList);
+                setSpecialGroups(context, groupList);
             }
             return result;
         }
@@ -408,7 +439,7 @@ public class OidcAuthenticationBean implements AuthenticationMethod {
         if (result == SUCCESS && userInfo.get(groupsClaimName) instanceof List) {
             LOGGER.info("Group list valid");
             List<String> groupList = (List<String>) userInfo.get(groupsClaimName);
-            //setSpecialGroups(context, groupList);
+            setSpecialGroups(context, groupList);
         }
         return result;
     }
