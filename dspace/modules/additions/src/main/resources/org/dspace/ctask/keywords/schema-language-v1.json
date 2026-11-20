@@ -1,0 +1,1 @@
+{"name": "language", "strict": true, "schema": {"type": "object", "properties": {"language": {"type": "string", "enum": ["hu", "en", "de", "fr", "hr", "la", "ru", "it", "es", "sr", "sk", "ro", "pl", "cs", "other"]}}, "required": ["language"], "additionalProperties": false}}

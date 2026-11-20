@@ -1,0 +1,5 @@
+Identify the language of the work described by this repository record.
+The work is usually written in the language of its title. The abstract is often an English summary of a work written in another language, so use the abstract only when the title alone is not enough (for example a very short title or a proper name).
+Decide only from the words and grammar, never from the topic: a text written in English about Hungary is English.
+Answer with the ISO 639-1 code of the language. If it is none of the listed languages, answer "other".
+Answer only with the JSON object.

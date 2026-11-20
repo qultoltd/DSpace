@@ -262,6 +262,13 @@
             </exclusion>
          </exclusions>
       </dependency>
+      <!-- Keyword suggestion task (org.dspace.ctask.keywords): Snowball Hungarian stemmer and Hunspell.
+           Same version as the lucene-core DSpace already ships (${solr.client.version}). -->
+      <dependency>
+         <groupId>org.apache.lucene</groupId>
+         <artifactId>lucene-analyzers-common</artifactId>
+         <version>${solr.client.version}</version>
+      </dependency>
       <dependency>
          <groupId>org.apache.lucene</groupId>
          <artifactId>lucene-analyzers-icu</artifactId>

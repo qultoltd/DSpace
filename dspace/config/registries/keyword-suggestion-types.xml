@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<!--
+  - keyword-suggestion-types.xml
+  -
+  - Fields written by the "suggestkeywords" curation task (org.dspace.ctask.keywords.SuggestKeywords).
+  - Listed in registry.metadata.load in dspace.cfg, which DSpace applies only to a brand-new database.
+  - On an existing database load it once (it skips fields that already exist), then restart the backend:
+      [dspace]/bin/dspace registry-loader -metadata [dspace]/config/registries/keyword-suggestion-types.xml
+  - Both fields are hidden from non-administrators (metadata.hide in modules/suggestkeywords.cfg) and excluded
+  - from Discovery (toIgnoreMetadataFields in spring/api/discovery.xml).
+  -->
+<dspace-dc-types>
+
+  <dspace-header>
+    <title>Keyword suggestion task fields</title>
+  </dspace-header>
+
+  <dc-schema>
+    <name>local</name>
+    <namespace>http://dspace.org/namespace/local/</namespace>
+  </dc-schema>
+
+  <dc-type>
+    <schema>local</schema>
+    <element>subject</element>
+    <qualifier>suggested</qualifier>
+    <scope_note>Subject keywords suggested by a language model, NOT approved. A cataloguer moves accepted ones to dc.subject and deletes the rest. Written by the suggestkeywords curation task; hidden from non-administrators and not indexed for search.</scope_note>
+  </dc-type>
+
+  <dc-type>
+    <schema>local</schema>
+    <element>description</element>
+    <qualifier>keywordrun</qualifier>
+    <scope_note>JSON record of the last suggestkeywords run on this item: model, prompt and pipeline versions, language, the evidence quote and check flags of each suggestion. Hidden from non-administrators and not indexed.</scope_note>
+  </dc-type>
+
+</dspace-dc-types>

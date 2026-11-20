@@ -252,6 +252,9 @@
                     <key><util:constant static-field="org.dspace.core.Constants.ITEM"/></key>
                     <list>
                         <value>dc.description.provenance</value>
+                        <!-- keyword suggestions are not approved: never searchable (suggestkeywords task) -->
+                        <value>local.subject.suggested</value>
+                        <value>local.description.keywordrun</value>
                     </list>
                 </entry>
             </map>
